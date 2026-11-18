@@ -56,4 +56,13 @@ config MTK_SCPSYS_PM_DOMAINS
 	  Control Processor System (SCPSYS) has several power management related
 	  tasks in the system.
 
+config MTK_SCPSYS_PM_DOMAINS_DISABLE_UNUSED
+	tristate "Disable Unused Domain For GKI Project"
+	depends on MTK_SCPSYS_PM_DOMAINS
+	help
+	  Say y here to support disable unused domain for GKI project.
+	  Because ko will be inserted after late_init_call,
+	  standard disable unused flow is not work. so use reference
+	  count in runtime pm to support it.
+
 endmenu
