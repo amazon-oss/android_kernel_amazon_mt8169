@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0
+
+menu "SSPM"
+source "drivers/misc/mediatek/sspm/Kconfig"
+endmenu # SSPM
 config MTK_SEC_VIDEO_PATH_SUPPORT
 	bool "Enable MTK Secure Video Path Support"
 	default n
