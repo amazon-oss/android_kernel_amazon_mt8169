@@ -6,6 +6,7 @@ subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/
 obj-$(CONFIG_MTK_BOOT) += boot/
 obj-$(CONFIG_MTK_QOS_FRAMEWORK) += qos/
 obj-$(CONFIG_MTK_TINYSYS_SSPM_SUPPORT) += sspm/
+obj-$(CONFIG_MTK_CMDQ_MBOX_EXT) += cmdq/
 obj-$(CONFIG_MTK_IOMMU_MISC) += iommu/
 obj-$(CONFIG_INTERCONNECT_MTK_EXTENSION) += mtk-interconnect/
 obj-$(CONFIG_MTK_DVFSRC_HELPER) += dvfsrc/
