@@ -96,3 +96,5 @@ obj-$(CONFIG_CHARGER_BD70528)	+= bd70528-charger.o
 obj-$(CONFIG_CHARGER_WILCO)	+= wilco-charger.o
 obj-$(CONFIG_BATTERY_MT6357)	+= mt6357_battery.o
 mt6357_battery-objs := mtk_battery_coulomb_service.o mtk_battery.o mtk_battery_algo.o  mt6357-gauge.o mtk_battery_daemon.o
+obj-$(CONFIG_BATTERY_MT6358)	+= mt6358_battery.o
+mt6358_battery-objs := mtk_battery_coulomb_service.o mtk_battery.o mtk_battery_algo.o  mt6358-gauge.o mtk_battery_daemon.o
