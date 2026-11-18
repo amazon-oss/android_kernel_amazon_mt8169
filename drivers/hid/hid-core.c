@@ -1693,7 +1693,7 @@ int hid_set_field(struct hid_field *field, unsigned offset, __s32 value)
 }
 EXPORT_SYMBOL_GPL(hid_set_field);
 
-static struct hid_report *hid_get_report(struct hid_report_enum *report_enum,
+struct hid_report *hid_get_report(struct hid_report_enum *report_enum,
 		const u8 *data)
 {
 	struct hid_report *report;
@@ -1709,6 +1709,7 @@ static struct hid_report *hid_get_report(struct hid_report_enum *report_enum,
 
 	return report;
 }
+EXPORT_SYMBOL_GPL(hid_get_report);
 
 /*
  * Implement a generic .request() callback, using .raw_request()
