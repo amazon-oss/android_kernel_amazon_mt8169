@@ -8,6 +8,7 @@
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
+#include <linux/iopoll.h>
 #include <linux/ioport.h>
 #include <linux/irq.h>
 #include <linux/of_address.h>
@@ -22,7 +23,6 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/interrupt.h>
-#include <linux/reset.h>
 
 #include <linux/mmc/card.h>
 #include <linux/mmc/core.h>
@@ -31,6 +31,13 @@
 #include <linux/mmc/sd.h>
 #include <linux/mmc/sdio.h>
 #include <linux/mmc/slot-gpio.h>
+
+#include "cqhci.h"
+#include <../core/mmc_ops.h>
+
+#if IS_ENABLED(CONFIG_AMAZON_METRICS_LOG) || IS_ENABLED(CONFIG_AMAZON_MINERVA_METRICS_LOG)
+#include <linux/metricslog.h>
+#endif
 
 #define MAX_BD_NUM          1024
 
@@ -152,6 +159,7 @@
 #define MSDC_INT_DMA_BDCSERR    (0x1 << 17)	/* W1C */
 #define MSDC_INT_DMA_GPDCSERR   (0x1 << 18)	/* W1C */
 #define MSDC_INT_DMA_PROTECT    (0x1 << 19)	/* W1C */
+#define MSDC_INT_CMDQ           (0x1 << 28)	/* W1C */
 
 /* MSDC_INTEN mask */
 #define MSDC_INTEN_MMCIRQ       (0x1 << 0)	/* RW */
@@ -182,6 +190,7 @@
 /* SDC_CFG mask */
 #define SDC_CFG_SDIOINTWKUP     (0x1 << 0)	/* RW */
 #define SDC_CFG_INSWKUP         (0x1 << 1)	/* RW */
+#define SDC_CFG_WRDTOC          (0x1fff  << 2)  /* RW */
 #define SDC_CFG_BUSWIDTH        (0x3 << 16)	/* RW */
 #define SDC_CFG_SDIO            (0x1 << 19)	/* RW */
 #define SDC_CFG_SDIOIDE         (0x1 << 20)	/* RW */
@@ -230,6 +239,7 @@
 #define MSDC_PATCH_BIT_DECRCTMO   (0x1 << 30)	/* RW */
 
 #define MSDC_PATCH_BIT1_CMDTA     (0x7 << 3)    /* RW */
+#define MSDC_PB1_BUSY_CHECK_SEL   (0x1 << 7)    /* RW */
 #define MSDC_PATCH_BIT1_STOP_DLY  (0xf << 8)    /* RW */
 
 #define MSDC_PATCH_BIT2_CFGRESP   (0x1 << 15)   /* RW */
@@ -248,6 +258,7 @@
 #define MSDC_PAD_TUNE_RD_SEL	  (0x1 << 13)   /* RW */
 #define MSDC_PAD_TUNE_CMD_SEL	  (0x1 << 21)   /* RW */
 
+#define PAD_DS_TUNE_DLY_SEL	  (0x1 << 0)	/* RW */
 #define PAD_DS_TUNE_DLY1	  (0x1f << 2)   /* RW */
 #define PAD_DS_TUNE_DLY2	  (0x1f << 7)   /* RW */
 #define PAD_DS_TUNE_DLY3	  (0x1f << 12)  /* RW */
@@ -280,6 +291,11 @@
 #define PAD_CMD_RD_RXDLY_SEL    (0x1 << 11)     /* RW */
 #define PAD_CMD_TX_DLY          (0x1f << 12)    /* RW */
 
+/* EMMC50_PAD_DS_TUNE mask */
+#define PAD_DS_DLY_SEL		(0x1 << 16)	/* RW */
+#define PAD_DS_DLY1		(0x1f << 10)	/* RW */
+#define PAD_DS_DLY3		(0x1f << 0)	/* RW */
+
 #define REQ_CMD_EIO  (0x1 << 0)
 #define REQ_CMD_TMO  (0x1 << 1)
 #define REQ_DAT_ERR  (0x1 << 2)
@@ -294,6 +310,9 @@
 #define MTK_MMC_AUTOSUSPEND_DELAY	50
 #define CMD_TIMEOUT         (HZ/10 * 5)	/* 100ms x5 */
 #define DAT_TIMEOUT         (HZ    * 5)	/* 1000ms x5 */
+#if IS_ENABLED(CONFIG_AMAZON_METRICS_LOG) || IS_ENABLED(CONFIG_AMAZON_MINERVA_METRICS_LOG)
+#define METRICS_DELAY       HZ
+#endif
 
 #define DEFAULT_DEBOUNCE	(8)	/* 8 cycles CD debounce */
 
@@ -413,28 +432,201 @@ struct msdc_host {
 	struct pinctrl_state *pins_uhs;
 	struct delayed_work req_timeout;
 	int irq;		/* host interrupt */
-	struct reset_control *reset;
 
+	struct clk *p_clk;		/* msdc power clock */
+	struct clk *axi_clk;	/* msdc axi clock*/
+	struct clk *ahb_clk;	/* msdc ahb2axi_brg_clk clock*/
 	struct clk *src_clk;	/* msdc source clock */
 	struct clk *h_clk;      /* msdc h_clk */
 	struct clk *bus_clk;	/* bus clock which used to access register */
 	struct clk *src_clk_cg; /* msdc source clock control gate */
+	struct clk *crypto_clk;  /* msdc crypto clock */
+
 	u32 mclk;		/* mmc subsystem clock frequency */
 	u32 src_clk_freq;	/* source clock frequency */
 	unsigned char timing;
 	bool vqmmc_enabled;
 	u32 latch_ck;
 	u32 hs400_ds_delay;
+	u32 hs400_ds_dly3;
 	u32 hs200_cmd_int_delay; /* cmd internal delay for HS200/SDR104 */
 	u32 hs400_cmd_int_delay; /* cmd internal delay for HS400 */
 	bool hs400_cmd_resp_sel_rising;
 				 /* cmd response sample selection for HS400 */
+	bool hs400_tuning;      /* hs400 mode online tuning */
 	bool hs400_mode;	/* current eMMC will run at hs400 mode */
 	bool internal_cd;	/* Use internal card-detect logic */
+	bool cqhci;		/* support eMMC hw cmdq */
 	struct msdc_save_para save_para; /* used when gate HCLK */
 	struct msdc_tune_para def_tune_para; /* default tune setting */
 	struct msdc_tune_para saved_tune_para; /* tune result of CMD21/CMD19 */
+	struct cqhci_host *cq_host;
+
+	struct regulator *vcore_reg;
+	u32 vcore_max_volt;
+
+	u32 crc_count;	/* total crc count */
+	u32 crc_invalid_count;	/* total crc invalid count eg CMD19 */
+	u32 req_count; /* total request count */
+	u32 datatimeout_count; /* total data timeout count */
+	u32 cmdtimeout_count; /* total cmd timeout count */
+	u32 reqtimeout_count; /* total req timeout count */
+	u32 pc_count;	/* total power cycle count */
+	u32 pc_suspend;	/* suspend/resume count */
+	u32 cmd19_fail; /* cmd19 tune failed count */
+
+#if IS_ENABLED(CONFIG_AMAZON_METRICS_LOG) || IS_ENABLED(CONFIG_AMAZON_MINERVA_METRICS_LOG)
+	struct delayed_work metrics_work;
+	bool metrics_enable;
+	u32 crc_count_p;	/* reported crc count */
+	u32 crc_invalid_count_p;	/* reported crc invalid count eg CMD19 */
+	u32 req_count_p; /* reported request count */
+	u32 datatimeout_count_p; /* reported data timeout count */
+	u32 cmdtimeout_count_p; /* reported cmd timeout count */
+	u32 reqtimeout_count_p; /* reported req timeout count */
+	u32 pc_count_p;	/* reported power cycle count */
+	u32 pc_suspend_p;	/* reported suspend/resume count */
+	u32 cmd19_fail_p; /* reported cmd19 tune failed count */
+	u32 inserted_p; /* reported card detection count */
+	u32 inserted; /* total card detection could */
+#endif
 };
+
+#if IS_ENABLED(CONFIG_AMAZON_METRICS_LOG)
+
+#define MSDC_LOG_COUNTER_TO_VITALS(name, value) \
+	do { \
+		if (value != value##_p) { \
+			log_counter_to_vitals(ANDROID_LOG_INFO, "Kernel", "Kernel", \
+				((host->mmc) && (host->mmc->caps & MMC_CAP_SD_HIGHSPEED)) ? "SD" : "EMMC", \
+				#name, value - value##_p, "count", NULL, VITALS_NORMAL); \
+			value##_p = value; \
+		} \
+	} while (0)
+#endif
+
+#if IS_ENABLED(CONFIG_AMAZON_MINERVA_METRICS_LOG)
+#define MSDC_MINERVA_COUNTER_TO_VITALS(name, value) \
+	do { \
+		if (value != value##_p) { \
+			log_counter_to_vitals_v2(ANDROID_LOG_INFO, \
+				VITALS_EMMC_GROUP_ID, VITALS_EMMC_SCHEMA_ID, \
+				"Kernel", "msdc_state", \
+				(mmc && (mmc->caps & MMC_CAP_SD_HIGHSPEED)) ? "SD" : "EMMC", \
+				#name, value - value##_p, "count", NULL, VITALS_NORMAL, NULL, NULL); \
+				value##_p = value; \
+		} \
+	} while (0)
+#endif
+
+#define FILTER_INVALIDCMD(opcode) \
+((opcode == MMC_SLEEP_AWAKE) || (opcode == MMC_SEND_EXT_CSD) || (opcode == MMC_BUS_TEST_W) \
+	|| (opcode == MMC_SEND_TUNING_BLOCK_HS200) || (opcode == SD_IO_RW_DIRECT) \
+	|| (opcode == MMC_APP_CMD))
+
+#define MSDC_DEV_ATTR(name, fmt, val, fmt_type) \
+static ssize_t msdc_attr_##name##_show(struct device *dev, struct device_attribute *attr, char *buf) \
+{ \
+	struct mmc_host *mmc = dev_get_drvdata(dev); \
+	struct msdc_host *host = mmc_priv(mmc); \
+	return sprintf(buf, fmt "\n", (fmt_type)val); \
+} \
+static ssize_t msdc_attr_##name##_store(struct device *dev, \
+	struct device_attribute *attr, const char *buf, size_t count) \
+{ \
+	fmt_type tmp; \
+	struct mmc_host *mmc = dev_get_drvdata(dev); \
+	struct msdc_host *host = mmc_priv(mmc); \
+	int n = sscanf(buf, fmt, &tmp); \
+	val = (typeof(val))tmp; \
+	return n ? count : -EINVAL; \
+} \
+static DEVICE_ATTR(name, 0664, msdc_attr_##name##_show, msdc_attr_##name##_store)
+
+MSDC_DEV_ATTR(crc_count, "%d", host->crc_count, u32);
+MSDC_DEV_ATTR(crc_invalid_count, "%d", host->crc_invalid_count, u32);
+MSDC_DEV_ATTR(req_count, "%d", host->req_count, u32);
+MSDC_DEV_ATTR(datatimeout_count, "%d", host->datatimeout_count, u32);
+MSDC_DEV_ATTR(cmdtimeout_count, "%d", host->cmdtimeout_count, u32);
+MSDC_DEV_ATTR(reqtimeout_count, "%d", host->reqtimeout_count, u32);
+MSDC_DEV_ATTR(pc_count, "%d", host->pc_count, u32);
+MSDC_DEV_ATTR(pc_suspend, "%d", host->pc_suspend, u32);
+MSDC_DEV_ATTR(cmd19_fail, "%d", host->cmd19_fail, u32);
+static struct device_attribute *msdc_attrs[] = {
+	&dev_attr_crc_count,
+	&dev_attr_crc_invalid_count,
+	&dev_attr_req_count,
+	&dev_attr_datatimeout_count,
+	&dev_attr_cmdtimeout_count,
+	&dev_attr_reqtimeout_count,
+	&dev_attr_pc_count,
+	&dev_attr_pc_suspend,
+	&dev_attr_cmd19_fail,
+	NULL,
+};
+
+static void msdc_add_device_attrs(struct msdc_host *host, struct device_attribute *attrs[])
+{
+	int i, ret;
+
+	if (!attrs)
+		return;
+
+	for (i = 0; attrs[i]; ++i) {
+		ret = device_create_file(host->dev, attrs[i]);
+		if (ret)
+			dev_err(host->dev, "failed to register attribute: %s; err=%d\n",
+				attrs[i]->attr.name, ret);
+	}
+}
+
+static void msdc_remove_device_attrs(struct msdc_host *host, struct device_attribute *attrs[])
+{
+	int i;
+
+	if (!attrs)
+		return;
+
+	for (i = 0; attrs[i]; ++i)
+		device_remove_file(host->dev, attrs[i]);
+}
+
+#if IS_ENABLED(CONFIG_AMAZON_MINERVA_METRICS_LOG)
+static void msdc_metrics_work(struct work_struct *work)
+{
+	struct msdc_host *host = container_of(work, struct msdc_host, metrics_work.work);
+	struct mmc_host *mmc = mmc_from_priv(host);
+
+	MSDC_MINERVA_COUNTER_TO_VITALS(crc, host->crc_count);
+	MSDC_MINERVA_COUNTER_TO_VITALS(crc_invalid, host->crc_invalid_count);
+	MSDC_MINERVA_COUNTER_TO_VITALS(req, host->req_count);
+	MSDC_MINERVA_COUNTER_TO_VITALS(datato, host->datatimeout_count);
+	MSDC_MINERVA_COUNTER_TO_VITALS(cmdto, host->cmdtimeout_count);
+	MSDC_MINERVA_COUNTER_TO_VITALS(reqto, host->reqtimeout_count);
+	MSDC_MINERVA_COUNTER_TO_VITALS(pc_count, host->pc_count);
+	MSDC_MINERVA_COUNTER_TO_VITALS(pc_suspend, host->pc_suspend);
+	MSDC_MINERVA_COUNTER_TO_VITALS(cmd19_fail, host->cmd19_fail);
+	MSDC_MINERVA_COUNTER_TO_VITALS(inserted, host->inserted);
+}
+#elif IS_ENABLED(CONFIG_AMAZON_METRICS_LOG)
+static void msdc_metrics_work(struct work_struct *work)
+{
+	struct msdc_host *host = container_of(work, struct msdc_host, metrics_work.work);
+	MSDC_LOG_COUNTER_TO_VITALS(crc, host->crc_count);
+	MSDC_LOG_COUNTER_TO_VITALS(crc_invalid, host->crc_invalid_count);
+	MSDC_LOG_COUNTER_TO_VITALS(req, host->req_count);
+	MSDC_LOG_COUNTER_TO_VITALS(datato, host->datatimeout_count);
+	MSDC_LOG_COUNTER_TO_VITALS(cmdto, host->cmdtimeout_count);
+	MSDC_LOG_COUNTER_TO_VITALS(reqto, host->reqtimeout_count);
+	MSDC_LOG_COUNTER_TO_VITALS(pc_count, host->pc_count);
+	MSDC_LOG_COUNTER_TO_VITALS(pc_suspend, host->pc_suspend);
+	MSDC_LOG_COUNTER_TO_VITALS(cmd19_fail, host->cmd19_fail);
+	MSDC_LOG_COUNTER_TO_VITALS(inserted, host->inserted);
+}
+#endif
+
+static u32 once_print_phase = 1;
+static u32 once_print_ds = 1;
 
 static const struct mtk_mmc_compatible mt8135_compat = {
 	.clk_div_bits = 8,
@@ -530,6 +722,18 @@ static const struct mtk_mmc_compatible mt7620_compat = {
 	.use_internal_cd = true,
 };
 
+static const struct mtk_mmc_compatible mt8169_compat = {
+	.clk_div_bits = 12,
+	.hs400_tune = false,
+	.pad_tune_reg = MSDC_PAD_TUNE0,
+	.async_fifo = true,
+	.data_tune = true,
+	.busy_check = true,
+	.stop_clk_fix = true,
+	.enhance_rx = true,
+	.support_64g = true,
+};
+
 static const struct of_device_id msdc_of_ids[] = {
 	{ .compatible = "mediatek,mt8135-mmc", .data = &mt8135_compat},
 	{ .compatible = "mediatek,mt8173-mmc", .data = &mt8173_compat},
@@ -539,6 +743,7 @@ static const struct of_device_id msdc_of_ids[] = {
 	{ .compatible = "mediatek,mt7622-mmc", .data = &mt7622_compat},
 	{ .compatible = "mediatek,mt8516-mmc", .data = &mt8516_compat},
 	{ .compatible = "mediatek,mt7620-mmc", .data = &mt7620_compat},
+	{ .compatible = "mediatek,mt8169-mmc", .data = &mt8169_compat},
 	{}
 };
 MODULE_DEVICE_TABLE(of, msdc_of_ids);
@@ -703,21 +908,22 @@ static void msdc_unprepare_data(struct msdc_host *host, struct mmc_data *data)
 	}
 }
 
-/* clock control primitives */
-static void msdc_set_timeout(struct msdc_host *host, u32 ns, u32 clks)
+static u64 msdc_timeout_cal(struct msdc_host *host, u64 ns, u64 clks)
 {
-	u32 timeout, clk_ns;
+	struct mmc_host *mmc = mmc_from_priv(host);
+	u64 timeout, clk_ns;
 	u32 mode = 0;
 
-	host->timeout_ns = ns;
-	host->timeout_clks = clks;
-	if (host->mmc->actual_clock == 0) {
+	if (mmc->actual_clock == 0) {
 		timeout = 0;
 	} else {
-		clk_ns  = 1000000000UL / host->mmc->actual_clock;
-		timeout = (ns + clk_ns - 1) / clk_ns + clks;
+		clk_ns  = 1000000000ULL;
+		do_div(clk_ns, mmc->actual_clock);
+		timeout = ns + clk_ns - 1;
+		do_div(timeout, clk_ns);
+		timeout += clks;
 		/* in 1048576 sclk cycle unit */
-		timeout = (timeout + (0x1 << 20) - 1) >> 20;
+		timeout = DIV_ROUND_UP(timeout, (0x1 << 20));
 		if (host->dev_comp->clk_div_bits == 8)
 			sdr_get_field(host->base + MSDC_CFG,
 				      MSDC_CFG_CKMOD, &mode);
@@ -727,25 +933,82 @@ static void msdc_set_timeout(struct msdc_host *host, u32 ns, u32 clks)
 		/*DDR mode will double the clk cycles for data timeout */
 		timeout = mode >= 2 ? timeout * 2 : timeout;
 		timeout = timeout > 1 ? timeout - 1 : 0;
-		timeout = timeout > 255 ? 255 : timeout;
 	}
-	sdr_set_field(host->base + SDC_CFG, SDC_CFG_DTOC, timeout);
+	return timeout;
 }
 
-static void msdc_gate_clock(struct msdc_host *host)
+/* clock control primitives */
+static void msdc_set_timeout(struct msdc_host *host, u64 ns, u64 clks)
 {
-	clk_disable_unprepare(host->src_clk_cg);
-	clk_disable_unprepare(host->src_clk);
-	clk_disable_unprepare(host->bus_clk);
-	clk_disable_unprepare(host->h_clk);
+	u64 timeout;
+
+	host->timeout_ns = ns;
+	host->timeout_clks = clks;
+
+	timeout = msdc_timeout_cal(host, ns, clks);
+	sdr_set_field(host->base + SDC_CFG, SDC_CFG_DTOC,
+		      (u32)(timeout > 255 ? 255 : timeout));
 }
 
-static void msdc_ungate_clock(struct msdc_host *host)
+static void msdc_set_busy_timeout(struct msdc_host *host, u64 ns, u64 clks)
 {
-	clk_prepare_enable(host->h_clk);
-	clk_prepare_enable(host->bus_clk);
-	clk_prepare_enable(host->src_clk);
-	clk_prepare_enable(host->src_clk_cg);
+	u64 timeout;
+
+	timeout = msdc_timeout_cal(host, ns, clks);
+	sdr_set_field(host->base + SDC_CFG, SDC_CFG_WRDTOC,
+		      (u32)(timeout > 8191 ? 8191 : timeout));
+}
+
+void msdc_gate_clock(struct mmc_host *mmc)
+{
+	struct msdc_host *host = mmc_priv(mmc);
+
+	if (!host)
+		return;
+
+	if (host->src_clk_cg)
+		clk_disable_unprepare(host->src_clk_cg);
+	if (host->src_clk)
+		clk_disable_unprepare(host->src_clk);
+	if (host->bus_clk)
+		clk_disable_unprepare(host->bus_clk);
+	if (host->h_clk)
+		clk_disable_unprepare(host->h_clk);
+	if (host->axi_clk)
+		clk_disable_unprepare(host->axi_clk);
+	if (host->ahb_clk)
+		clk_disable_unprepare(host->ahb_clk);
+	if (host->p_clk)
+		clk_disable_unprepare(host->p_clk);
+	if (host->crypto_clk)
+		clk_disable_unprepare(host->crypto_clk);
+
+}
+
+void msdc_ungate_clock(struct mmc_host *mmc)
+{
+	struct msdc_host *host = mmc_priv(mmc);
+
+	if (!host)
+		return;
+
+	if (host->p_clk)
+		clk_prepare_enable(host->p_clk);	//MSDC_PCLK_CK_MSDC1_CKEN
+	if (host->axi_clk)
+		clk_prepare_enable(host->axi_clk); //MSDC_AXI_CK_CKEN
+	if (host->ahb_clk)
+		clk_prepare_enable(host->ahb_clk); //MSDC_AHB2AXI_BRG_AXI_CKEN
+	if (host->bus_clk)
+		clk_prepare_enable(host->bus_clk);
+	if (host->h_clk)
+		clk_prepare_enable(host->h_clk);	//MSDC_HCLK_MST_CK_0P_CKEN
+	if (host->src_clk)
+		clk_prepare_enable(host->src_clk);
+	if (host->src_clk_cg)
+		clk_prepare_enable(host->src_clk_cg);	//MSDC_SRC_CK_0P_CKEN
+	if (host->crypto_clk)
+		clk_prepare_enable(host->crypto_clk);
+
 	while (!(readl(host->base + MSDC_CFG) & MSDC_CFG_CKSTB))
 		cpu_relax();
 }
@@ -978,6 +1241,14 @@ static void msdc_start_data(struct msdc_host *host, struct mmc_request *mrq,
 	read = data->flags & MMC_DATA_READ;
 
 	mod_delayed_work(system_wq, &host->req_timeout, DAT_TIMEOUT);
+	host->req_count++;
+#if IS_ENABLED(CONFIG_AMAZON_METRICS_LOG)
+	if (!strcmp(mmc_hostname(host->mmc), "mmc1"))
+		atomic64_inc(&host->mmc->data_count);
+#endif
+	dev_dbg(host->dev, "crc/total %d/%d invalcrc %d datato %d cmdto %d reqto %d total_pc %d pc_sus %d\n",
+			host->crc_count, host->req_count, host->crc_invalid_count, host->datatimeout_count,
+			host->cmdtimeout_count, host->reqtimeout_count, host->pc_count, host->pc_suspend);
 	msdc_dma_setup(host, &host->dma, data);
 	sdr_set_bits(host->base + MSDC_INTEN, data_ints_mask);
 	sdr_set_field(host->base + MSDC_DMA_CTRL, MSDC_DMA_CTRL_START, 1);
@@ -1087,7 +1358,8 @@ static bool msdc_cmd_done(struct msdc_host *host, int events,
 	if (!sbc_error && !(events & MSDC_INT_CMDRDY)) {
 		if (events & MSDC_INT_CMDTMO ||
 		    (cmd->opcode != MMC_SEND_TUNING_BLOCK &&
-		     cmd->opcode != MMC_SEND_TUNING_BLOCK_HS200))
+		     cmd->opcode != MMC_SEND_TUNING_BLOCK_HS200 &&
+		     (host->hs400_tuning && cmd->opcode != MMC_SEND_EXT_CSD)))
 			/*
 			 * should not clear fifo/interrupt as the tune data
 			 * may have alreay come when cmd19/cmd21 gets response
@@ -1097,17 +1369,29 @@ static bool msdc_cmd_done(struct msdc_host *host, int events,
 		if (events & MSDC_INT_RSPCRCERR) {
 			cmd->error = -EILSEQ;
 			host->error |= REQ_CMD_EIO;
+			if (FILTER_INVALIDCMD(cmd->opcode))
+				host->crc_invalid_count++;
+			else
+				host->crc_count++;
 		} else if (events & MSDC_INT_CMDTMO) {
 			cmd->error = -ETIMEDOUT;
 			host->error |= REQ_CMD_TMO;
+			host->cmdtimeout_count++;
 		}
+#if IS_ENABLED(CONFIG_AMAZON_METRICS_LOG) || IS_ENABLED(CONFIG_AMAZON_MINERVA_METRICS_LOG)
+		if (host->metrics_enable)
+			mod_delayed_work(system_wq, &host->metrics_work, METRICS_DELAY);
+#endif
 	}
-	if (cmd->error)
-		dev_dbg(host->dev,
-				"%s: cmd=%d arg=%08X; rsp %08X; cmd_error=%d\n",
-				__func__, cmd->opcode, cmd->arg, rsp[0],
-				cmd->error);
-
+	if (cmd->error) {
+		if (!(host->hs400_tuning) &&
+			(mrq->cmd->opcode != MMC_SEND_TUNING_BLOCK) &&
+			(mrq->cmd->opcode != MMC_SEND_TUNING_BLOCK_HS200))
+			dev_err(host->dev,
+					"%s: cmd=%d arg=%08X; rsp %08X; cmd_error=%d\n",
+					__func__, cmd->opcode, cmd->arg, rsp[0],
+					cmd->error);
+	}
 	msdc_cmd_next(host, mrq, cmd);
 	return true;
 }
@@ -1169,7 +1453,7 @@ static void msdc_start_command(struct msdc_host *host,
 
 	cmd->error = 0;
 	rawcmd = msdc_cmd_prepare_raw_cmd(host, mrq, cmd);
-
+	host->req_count++;
 	spin_lock_irqsave(&host->lock, flags);
 	sdr_set_bits(host->base + MSDC_INTEN, cmd_ints_mask);
 	spin_unlock_irqrestore(&host->lock, flags);
@@ -1184,7 +1468,8 @@ static void msdc_cmd_next(struct msdc_host *host,
 	if ((cmd->error &&
 	    !(cmd->error == -EILSEQ &&
 	      (cmd->opcode == MMC_SEND_TUNING_BLOCK ||
-	       cmd->opcode == MMC_SEND_TUNING_BLOCK_HS200))) ||
+	       cmd->opcode == MMC_SEND_TUNING_BLOCK_HS200 ||
+	       (host->hs400_tuning && cmd->opcode != MMC_SEND_EXT_CSD)))) ||
 	    (mrq->sbc && mrq->sbc->error))
 		msdc_request_done(host, mrq);
 	else if (cmd == mrq->sbc)
@@ -1275,6 +1560,8 @@ static bool msdc_data_xfer_done(struct msdc_host *host, u32 events,
 	    (MSDC_INT_XFER_COMPL | MSDC_INT_DATCRCERR | MSDC_INT_DATTMO
 	     | MSDC_INT_DMA_BDCSERR | MSDC_INT_DMA_GPDCSERR
 	     | MSDC_INT_DMA_PROTECT);
+	u32 val;
+	int ret;
 
 	spin_lock_irqsave(&host->lock, flags);
 	done = !host->data;
@@ -1291,8 +1578,21 @@ static bool msdc_data_xfer_done(struct msdc_host *host, u32 events,
 				readl(host->base + MSDC_DMA_CFG));
 		sdr_set_field(host->base + MSDC_DMA_CTRL, MSDC_DMA_CTRL_STOP,
 				1);
-		while (readl(host->base + MSDC_DMA_CFG) & MSDC_DMA_CFG_STS)
-			cpu_relax();
+
+		ret = readl_poll_timeout_atomic(host->base + MSDC_DMA_CTRL, val,
+						!(val & MSDC_DMA_CTRL_STOP), 0, 20000);
+		if (ret) {
+			dev_err(host->dev, "DMA stop timed out\n");
+			return false;
+		}
+
+		ret = readl_poll_timeout_atomic(host->base + MSDC_DMA_CFG, val,
+						!(val & MSDC_DMA_CFG_STS), 0, 20000);
+		if (ret) {
+			dev_err(host->dev, "DMA inactive timed out\n");
+			return false;
+		}
+
 		sdr_clr_bits(host->base + MSDC_INTEN, data_ints_mask);
 		dev_dbg(host->dev, "DMA stop\n");
 
@@ -1304,17 +1604,33 @@ static bool msdc_data_xfer_done(struct msdc_host *host, u32 events,
 			host->error |= REQ_DAT_ERR;
 			data->bytes_xfered = 0;
 
-			if (events & MSDC_INT_DATTMO)
+			if (events & MSDC_INT_DATTMO) {
 				data->error = -ETIMEDOUT;
-			else if (events & MSDC_INT_DATCRCERR)
+				host->datatimeout_count++;
+#if IS_ENABLED(CONFIG_AMAZON_METRICS_LOG)
+				if (!strcmp(mmc_hostname(host->mmc), "mmc1"))
+					atomic64_inc(&host->mmc->data_timeout_count);
+#endif
+			} else if (events & MSDC_INT_DATCRCERR) {
 				data->error = -EILSEQ;
-
-			dev_dbg(host->dev, "%s: cmd=%d; blocks=%d",
-				__func__, mrq->cmd->opcode, data->blocks);
-			dev_dbg(host->dev, "data_error=%d xfer_size=%d\n",
-				(int)data->error, data->bytes_xfered);
+				if (FILTER_INVALIDCMD(mrq->cmd->opcode))
+					host->crc_invalid_count++;
+				else
+					host->crc_count++;
+		   }
+#if IS_ENABLED(CONFIG_AMAZON_METRICS_LOG) || IS_ENABLED(CONFIG_AMAZON_MINERVA_METRICS_LOG)
+			if (host->metrics_enable)
+				mod_delayed_work(system_wq, &host->metrics_work, METRICS_DELAY);
+#endif
+			if (!(host->hs400_tuning) &&
+				(mrq->cmd->opcode != MMC_SEND_TUNING_BLOCK) &&
+				(mrq->cmd->opcode != MMC_SEND_TUNING_BLOCK_HS200)) {
+				dev_err(host->dev, "%s: cmd=%d; blocks=%d",
+					__func__, mrq->cmd->opcode, data->blocks);
+				dev_err(host->dev, "data_error=%d xfer_size=%d\n",
+					(int)data->error, data->bytes_xfered);
+			}
 		}
-
 		msdc_data_xfer_next(host, mrq, data);
 		done = true;
 	}
@@ -1368,6 +1684,7 @@ static int msdc_ops_switch_volt(struct mmc_host *mmc, struct mmc_ios *ios)
 				pinctrl_select_state(host->pinctrl, host->pins_default);
 		}
 	}
+
 	return ret;
 }
 
@@ -1387,6 +1704,7 @@ static void msdc_request_timeout(struct work_struct *work)
 
 	/* simulate HW timeout status */
 	dev_err(host->dev, "%s: aborting cmd/data/mrq\n", __func__);
+	host->reqtimeout_count++;
 	if (host->mrq) {
 		dev_err(host->dev, "%s: aborting mrq=%p cmd=%d\n", __func__,
 				host->mrq, host->mrq->cmd->opcode);
@@ -1431,6 +1749,34 @@ static void msdc_enable_sdio_irq(struct mmc_host *mmc, int enb)
 		pm_runtime_put_noidle(host->dev);
 }
 
+static irqreturn_t msdc_cmdq_irq(struct msdc_host *host, u32 intsts)
+{
+	int cmd_err = 0, dat_err = 0;
+
+	if (intsts & MSDC_INT_RSPCRCERR) {
+		cmd_err = -EILSEQ;
+		dev_err(host->dev, "%s: CMD CRC ERR", __func__);
+	} else if (intsts & MSDC_INT_CMDTMO) {
+		cmd_err = -ETIMEDOUT;
+		dev_err(host->dev, "%s: CMD TIMEOUT ERR", __func__);
+	}
+
+	if (intsts & MSDC_INT_DATCRCERR) {
+		dat_err = -EILSEQ;
+		dev_err(host->dev, "%s: DATA CRC ERR", __func__);
+	} else if (intsts & MSDC_INT_DATTMO) {
+		dat_err = -ETIMEDOUT;
+		dev_err(host->dev, "%s: DATA TIMEOUT ERR", __func__);
+	}
+
+	if (cmd_err || dat_err) {
+		dev_err(host->dev, "cmd_err = %d, dat_err =%d, intsts = 0x%x",
+			cmd_err, dat_err, intsts);
+	}
+
+	return cqhci_irq(host->mmc, 0, cmd_err, dat_err);
+}
+
 static irqreturn_t msdc_irq(int irq, void *dev_id)
 {
 	struct msdc_host *host = (struct msdc_host *) dev_id;
@@ -1467,6 +1813,14 @@ static irqreturn_t msdc_irq(int irq, void *dev_id)
 		if (!(events & (event_mask & ~MSDC_INT_SDIOIRQ)))
 			break;
 
+		if ((host->mmc->caps2 & MMC_CAP2_CQE) &&
+		    (events & MSDC_INT_CMDQ)) {
+			msdc_cmdq_irq(host, events);
+			/* clear interrupts */
+			writel(events, host->base + MSDC_INT);
+			return IRQ_HANDLED;
+		}
+
 		if (!mrq) {
 			dev_err(host->dev,
 				"%s: MRQ=NULL; events=%08X; event_mask=%08X\n",
@@ -1490,12 +1844,6 @@ static void msdc_init_hw(struct msdc_host *host)
 {
 	u32 val;
 	u32 tune_reg = host->dev_comp->pad_tune_reg;
-
-	if (host->reset) {
-		reset_control_assert(host->reset);
-		usleep_range(10, 50);
-		reset_control_deassert(host->reset);
-	}
 
 	/* Configure to MMC/SD mode, clock free running */
 	sdr_set_bits(host->base + MSDC_CFG, MSDC_CFG_MODE | MSDC_CFG_CKPDN);
@@ -1683,6 +2031,7 @@ static void msdc_ops_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	msdc_set_buswidth(host, ios->bus_width);
 
 	/* Suspend/Resume will do power off/on */
+
 	switch (ios->power_mode) {
 	case MMC_POWER_UP:
 		if (!IS_ERR(mmc->supply.vmmc)) {
@@ -1711,6 +2060,14 @@ static void msdc_ops_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		if (!IS_ERR(mmc->supply.vqmmc) && host->vqmmc_enabled) {
 			regulator_disable(mmc->supply.vqmmc);
 			host->vqmmc_enabled = false;
+			host->pc_count++;
+#if IS_ENABLED(CONFIG_AMAZON_METRICS_LOG) || IS_ENABLED(CONFIG_AMAZON_MINERVA_METRICS_LOG)
+			if (host->metrics_enable)
+				mod_delayed_work(system_wq, &host->metrics_work, METRICS_DELAY);
+#endif
+			dev_info(host->dev, "crc/total %d/%d invalcrc %d datato %d cmdto %d reqto %d total_pc %d pc_sus %d\n",
+				host->crc_count, host->req_count, host->crc_invalid_count, host->datatimeout_count,
+				host->cmdtimeout_count, host->reqtimeout_count, host->pc_count, host->pc_suspend);
 		}
 		break;
 	default:
@@ -1767,8 +2124,12 @@ static struct msdc_delay_phase get_best_delay(struct msdc_host *host, u32 delay)
 		final_phase = (start_final + len_final / 3) % PAD_DELAY_MAX;
 	else
 		final_phase = (start_final + len_final / 2) % PAD_DELAY_MAX;
-	dev_info(host->dev, "phase: [map:%x] [maxlen:%d] [final:%d]\n",
-		 delay, len_final, final_phase);
+
+	if (once_print_phase) {
+		dev_info(host->dev, "phase: [map:%x] [maxlen:%d] [final:%d]\n",
+			 delay, len_final, final_phase);
+		once_print_phase = 0;
+	}
 
 	delay_phase.maxlen = len_final;
 	delay_phase.start = start_final;
@@ -2087,6 +2448,13 @@ static int msdc_execute_tuning(struct mmc_host *mmc, u32 opcode)
 		ret = msdc_tune_data(mmc, opcode);
 		if (ret == -EIO)
 			dev_err(host->dev, "Tune data fail!\n");
+		if (ret) {
+				host->cmd19_fail++;
+#if IS_ENABLED(CONFIG_AMAZON_METRICS_LOG) || IS_ENABLED(CONFIG_AMAZON_MINERVA_METRICS_LOG)
+			if (host->metrics_enable)
+					mod_delayed_work(system_wq, &host->metrics_work, METRICS_DELAY);
+#endif
+			}
 	}
 
 tune_done:
@@ -2118,6 +2486,71 @@ static int msdc_prepare_hs400_tuning(struct mmc_host *mmc, struct mmc_ios *ios)
 	sdr_set_field(host->base + EMMC50_CFG3, EMMC50_CFG3_OUTS_WR, 2);
 
 	return 0;
+}
+
+static int msdc_execute_hs400_tuning(struct mmc_host *mmc, struct mmc_card *card)
+{
+	struct msdc_host *host = mmc_priv(mmc);
+	struct msdc_delay_phase dly1_delay;
+	int i, ret;
+	u8 *ext_csd;
+	u32 val, result_dly1 = 0;
+
+	if (host->top_base) {
+		sdr_set_bits(host->top_base + EMMC50_PAD_DS_TUNE,
+				PAD_DS_DLY_SEL);
+		sdr_set_field(host->top_base + EMMC50_PAD_DS_TUNE,
+				PAD_DS_DLY3, host->hs400_ds_dly3);
+	} else {
+
+		sdr_set_bits(host->base + PAD_DS_TUNE, PAD_DS_TUNE_DLY_SEL);
+		sdr_set_field(host->base + PAD_DS_TUNE,
+				PAD_DS_TUNE_DLY3, host->hs400_ds_dly3);
+	}
+
+	host->hs400_tuning = true;
+	for (i = 0; i < PAD_DELAY_MAX; i++) {
+		if (host->top_base)
+			sdr_set_field(host->top_base + EMMC50_PAD_DS_TUNE,
+					PAD_DS_DLY1, i);
+		else
+			sdr_set_field(host->base + PAD_DS_TUNE,
+					PAD_DS_TUNE_DLY1, i);
+		ret = mmc_get_ext_csd(card, &ext_csd);
+		if (!ret) {
+			result_dly1 |= (1 << i);
+			kfree(ext_csd);
+		}
+	}
+	host->hs400_tuning = false;
+
+	dly1_delay = get_best_delay(host, result_dly1);
+	if (dly1_delay.maxlen == 0) {
+		dev_dbg(host->dev, "Failed to get DLY1 delay!\n");
+		goto fail;
+	}
+	if (host->top_base)
+		sdr_set_field(host->top_base + EMMC50_PAD_DS_TUNE,
+				PAD_DS_DLY1, dly1_delay.final_phase);
+	else
+		sdr_set_field(host->base + PAD_DS_TUNE,
+				PAD_DS_TUNE_DLY1, dly1_delay.final_phase);
+
+	if (host->top_base)
+		val = readl(host->top_base + EMMC50_PAD_DS_TUNE);
+	else
+		val = readl(host->base + PAD_DS_TUNE);
+
+	if (once_print_ds) {
+		dev_info(host->dev, "Fianl PAD_DS_TUNE: 0x%x\n", val);
+		once_print_ds = 0;
+	}
+
+	return 0;
+
+fail:
+	dev_dbg(host->dev, "Failed to tuning DS pin delay!\n");
+	return -ERANGE;
 }
 
 static void msdc_hw_reset(struct mmc_host *mmc)
@@ -2157,6 +2590,80 @@ static int msdc_get_cd(struct mmc_host *mmc)
 		return !val;
 }
 
+static void msdc_cqe_enable(struct mmc_host *mmc)
+{
+	struct msdc_host *host = mmc_priv(mmc);
+
+	/* enable cmdq irq */
+	writel(MSDC_INT_CMDQ, host->base + MSDC_INTEN);
+	/* enable busy check */
+	sdr_set_bits(host->base + MSDC_PATCH_BIT1, MSDC_PB1_BUSY_CHECK_SEL);
+	/* default write data / busy timeout 20s */
+	msdc_set_busy_timeout(host, 20 * 1000000000ULL, 0);
+	/* default read data timeout 1s */
+	msdc_set_timeout(host, 1000000000ULL, 0);
+}
+
+void msdc_cqe_disable(struct mmc_host *mmc, bool recovery)
+{
+	struct msdc_host *host = mmc_priv(mmc);
+	u32 val;
+
+	/* disable cmdq irq */
+	sdr_clr_bits(host->base + MSDC_INTEN, MSDC_INT_CMDQ);
+	/* disable busy check */
+	sdr_clr_bits(host->base + MSDC_PATCH_BIT1, MSDC_PB1_BUSY_CHECK_SEL);
+
+	val = readl(host->base + MSDC_INT);
+	writel(val, host->base + MSDC_INT);
+
+	if (recovery) {
+		sdr_set_field(host->base + MSDC_DMA_CTRL,
+			      MSDC_DMA_CTRL_STOP, 1);
+
+		if (WARN_ON(readl_poll_timeout(host->base + MSDC_DMA_CTRL, val,
+			    !(val & MSDC_DMA_CTRL_STOP), 0, 20000)))
+			return;
+
+		if (WARN_ON(readl_poll_timeout(host->base + MSDC_DMA_CFG, val,
+			    !(val & MSDC_DMA_CFG_STS), 0, 20000)))
+			return;
+
+		msdc_reset_hw(host);
+	}
+}
+
+static void msdc_cqe_pre_enable(struct mmc_host *mmc)
+{
+	struct cqhci_host *cq_host = mmc->cqe_private;
+	u32 reg;
+
+	reg = cqhci_readl(cq_host, CQHCI_CFG);
+	reg |= CQHCI_ENABLE;
+	cqhci_writel(cq_host, reg, CQHCI_CFG);
+}
+
+static void msdc_cqe_post_disable(struct mmc_host *mmc)
+{
+	struct cqhci_host *cq_host = mmc->cqe_private;
+	u32 reg;
+
+	reg = cqhci_readl(cq_host, CQHCI_CFG);
+	reg &= ~CQHCI_ENABLE;
+	cqhci_writel(cq_host, reg, CQHCI_CFG);
+}
+
+#if IS_ENABLED(CONFIG_AMAZON_METRICS_LOG) || IS_ENABLED(CONFIG_AMAZON_MINERVA_METRICS_LOG)
+static void msdc_cd_irq(struct mmc_host *mmc)
+{
+	struct msdc_host *host = mmc_priv(mmc);
+
+	host->inserted++;
+	if (host->metrics_enable)
+		mod_delayed_work(system_wq, &host->metrics_work, METRICS_DELAY);
+}
+#endif
+
 static const struct mmc_host_ops mt_msdc_ops = {
 	.post_req = msdc_post_req,
 	.pre_req = msdc_pre_req,
@@ -2169,8 +2676,21 @@ static const struct mmc_host_ops mt_msdc_ops = {
 	.start_signal_voltage_switch = msdc_ops_switch_volt,
 	.card_busy = msdc_card_busy,
 	.execute_tuning = msdc_execute_tuning,
+	.execute_hs400_tuning = msdc_execute_hs400_tuning,
 	.prepare_hs400_tuning = msdc_prepare_hs400_tuning,
 	.hw_reset = msdc_hw_reset,
+#if IS_ENABLED(CONFIG_AMAZON_METRICS_LOG) || IS_ENABLED(CONFIG_AMAZON_MINERVA_METRICS_LOG)
+	.cd_irq = msdc_cd_irq,
+#endif
+};
+
+static const struct cqhci_host_ops msdc_cmdq_ops = {
+	.enable         = msdc_cqe_enable,
+	.disable        = msdc_cqe_disable,
+	.pre_enable	= msdc_cqe_pre_enable,
+	.post_disable	= msdc_cqe_post_disable,
+	.ungate_clock	= msdc_ungate_clock,
+	.gate_clock	= msdc_gate_clock,
 };
 
 static void msdc_of_property_parse(struct platform_device *pdev,
@@ -2181,6 +2701,9 @@ static void msdc_of_property_parse(struct platform_device *pdev,
 
 	of_property_read_u32(pdev->dev.of_node, "hs400-ds-delay",
 			     &host->hs400_ds_delay);
+
+	of_property_read_u32(pdev->dev.of_node, "mediatek,hs400-ds-dly3",
+			     &host->hs400_ds_dly3);
 
 	of_property_read_u32(pdev->dev.of_node, "mediatek,hs200-cmd-int-delay",
 			     &host->hs200_cmd_int_delay);
@@ -2193,6 +2716,15 @@ static void msdc_of_property_parse(struct platform_device *pdev,
 		host->hs400_cmd_resp_sel_rising = true;
 	else
 		host->hs400_cmd_resp_sel_rising = false;
+
+	if (of_property_read_bool(pdev->dev.of_node,
+				  "supports-cqe"))
+		host->cqhci = true;
+	else
+		host->cqhci = false;
+
+	of_property_read_u32(pdev->dev.of_node, "max-vcore-volt",
+			     &host->vcore_max_volt);
 }
 
 static int msdc_drv_probe(struct platform_device *pdev)
@@ -2201,6 +2733,7 @@ static int msdc_drv_probe(struct platform_device *pdev)
 	struct msdc_host *host;
 	struct resource *res;
 	int ret;
+	const char *dup_name;
 
 	if (!pdev->dev.of_node) {
 		dev_err(&pdev->dev, "No DT found\n");
@@ -2211,6 +2744,15 @@ static int msdc_drv_probe(struct platform_device *pdev)
 	mmc = mmc_alloc_host(sizeof(struct msdc_host), &pdev->dev);
 	if (!mmc)
 		return -ENOMEM;
+
+	pdev->name = kstrdup(pdev->name, GFP_KERNEL);
+	if (!strcmp(pdev->name, "11230000.mmc") &&
+		!device_rename(mmc->parent, "bootdevice"))
+		dev_notice(&pdev->dev, "device renamed to bootdevice.\n");
+
+	dup_name = pdev->name;
+	pdev->name = pdev->dev.kobj.name;
+	kfree_const(dup_name);
 
 	host = mmc_priv(mmc);
 	ret = mmc_of_parse(mmc);
@@ -2237,12 +2779,14 @@ static int msdc_drv_probe(struct platform_device *pdev)
 
 	host->src_clk = devm_clk_get(&pdev->dev, "source");
 	if (IS_ERR(host->src_clk)) {
+		dev_dbg(&pdev->dev, "can't find source clk");
 		ret = PTR_ERR(host->src_clk);
 		goto host_free;
 	}
 
 	host->h_clk = devm_clk_get(&pdev->dev, "hclk");
 	if (IS_ERR(host->h_clk)) {
+		dev_dbg(&pdev->dev, "can't find hclk");
 		ret = PTR_ERR(host->h_clk);
 		goto host_free;
 	}
@@ -2250,15 +2794,23 @@ static int msdc_drv_probe(struct platform_device *pdev)
 	host->bus_clk = devm_clk_get(&pdev->dev, "bus_clk");
 	if (IS_ERR(host->bus_clk))
 		host->bus_clk = NULL;
+
 	/*source clock control gate is optional clock*/
 	host->src_clk_cg = devm_clk_get(&pdev->dev, "source_cg");
 	if (IS_ERR(host->src_clk_cg))
 		host->src_clk_cg = NULL;
 
-	host->reset = devm_reset_control_get_optional_exclusive(&pdev->dev,
-								"hrst");
-	if (IS_ERR(host->reset))
-		return PTR_ERR(host->reset);
+	host->p_clk = devm_clk_get(&pdev->dev, "p_clk");
+	if (IS_ERR(host->p_clk))
+		host->p_clk = NULL;
+
+	host->axi_clk = devm_clk_get(&pdev->dev, "axi_clk");
+	if (IS_ERR(host->axi_clk))
+		host->axi_clk = NULL;
+
+	host->ahb_clk = devm_clk_get(&pdev->dev, "ahb_clk");
+	if (IS_ERR(host->ahb_clk))
+		host->ahb_clk = NULL;
 
 	host->irq = platform_get_irq(pdev, 0);
 	if (host->irq < 0) {
@@ -2310,10 +2862,21 @@ static int msdc_drv_probe(struct platform_device *pdev)
 		host->internal_cd = true;
 	}
 
+#ifdef CONFIG_MMC_CRYPTO
+	if (mmc->caps2 & MMC_CAP2_NO_SD) {
+		mmc->caps2 |= MMC_CAP2_CRYPTO;
+		host->crypto_clk = devm_clk_get(&pdev->dev, "crypto_clk");
+		if (IS_ERR(host->crypto_clk))
+			host->crypto_clk = NULL;
+	}
+#endif
+
 	if (mmc->caps & MMC_CAP_SDIO_IRQ)
 		mmc->caps2 |= MMC_CAP2_SDIO_IRQ_NOTHREAD;
 
 	mmc->caps |= MMC_CAP_ERASE | MMC_CAP_CMD23;
+	if (host->cqhci)
+		mmc->caps2 |= MMC_CAP2_CQE | MMC_CAP2_CQE_DCMD;
 	/* MMC core transfer sizes tunable parameters */
 	mmc->max_segs = MAX_BD_NUM;
 	if (host->dev_comp->support_64g)
@@ -2329,6 +2892,27 @@ static int msdc_drv_probe(struct platform_device *pdev)
 		host->dma_mask = DMA_BIT_MASK(32);
 	mmc_dev(mmc)->dma_mask = &host->dma_mask;
 
+	msdc_ungate_clock(mmc);
+	if (mmc->caps2 & MMC_CAP2_CQE) {
+		host->cq_host = devm_kzalloc(host->mmc->parent,
+					     sizeof(*host->cq_host),
+					     GFP_KERNEL);
+		if (!host->cq_host) {
+			ret = -ENOMEM;
+			goto host_free;
+		}
+		host->cq_host->caps |= CQHCI_TASK_DESC_SZ_128;
+		host->cq_host->mmio = host->base + 0x800;
+		host->cq_host->ops = &msdc_cmdq_ops;
+		ret = cqhci_init(host->cq_host, mmc, true);
+		if (ret)
+			goto host_free;
+		mmc->max_segs = 128;
+		/* cqhci 16bit length */
+		/* 0 size, means 65536 so we don't have to -1 here */
+		mmc->max_seg_size = 64 * 1024;
+	}
+
 	host->timeout_clks = 3 * 1048576;
 	host->dma.gpd = dma_alloc_coherent(&pdev->dev,
 				2 * sizeof(struct mt_gpdma_desc),
@@ -2343,9 +2927,12 @@ static int msdc_drv_probe(struct platform_device *pdev)
 	msdc_init_gpd_bd(host, &host->dma);
 	INIT_DELAYED_WORK(&host->req_timeout, msdc_request_timeout);
 	spin_lock_init(&host->lock);
+#if IS_ENABLED(CONFIG_AMAZON_METRICS_LOG) || IS_ENABLED(CONFIG_AMAZON_MINERVA_METRICS_LOG)
+	host->metrics_enable = true;
+	INIT_DELAYED_WORK(&host->metrics_work, msdc_metrics_work);
+#endif
 
 	platform_set_drvdata(pdev, mmc);
-	msdc_ungate_clock(host);
 	msdc_init_hw(host);
 
 	ret = devm_request_irq(&pdev->dev, host->irq, msdc_irq,
@@ -2353,10 +2940,26 @@ static int msdc_drv_probe(struct platform_device *pdev)
 	if (ret)
 		goto release;
 
+	host->vcore_reg = devm_regulator_get(&pdev->dev, "dvfsrc-vcore");
+	if (IS_ERR(host->vcore_reg)) {
+		dev_err(host->dev, "failed to get dvfsrc-vcore regulator!\n");
+		host->vcore_reg = NULL;
+	}
+
+	if (host->vcore_reg && host->vcore_max_volt) {
+		ret = regulator_set_voltage(host->vcore_reg,
+					    host->vcore_max_volt,
+					    host->vcore_max_volt);
+		if (ret < 0)
+			dev_err(host->dev, "%s failed to lock vcore: %d\n",
+				__func__, ret);
+	}
+
 	pm_runtime_set_active(host->dev);
 	pm_runtime_set_autosuspend_delay(host->dev, MTK_MMC_AUTOSUSPEND_DELAY);
 	pm_runtime_use_autosuspend(host->dev);
 	pm_runtime_enable(host->dev);
+	msdc_add_device_attrs(host, msdc_attrs);
 	ret = mmc_add_host(mmc);
 
 	if (ret)
@@ -2364,11 +2967,18 @@ static int msdc_drv_probe(struct platform_device *pdev)
 
 	return 0;
 end:
+	if (host->vcore_reg && host->vcore_max_volt) {
+		ret = regulator_set_voltage(host->vcore_reg, 0, INT_MAX);
+		if (ret < 0)
+			dev_err(host->dev, "%s set vcore voltage return: %d\n",
+				__func__, ret);
+	}
+
 	pm_runtime_disable(host->dev);
 release:
 	platform_set_drvdata(pdev, NULL);
 	msdc_deinit_hw(host);
-	msdc_gate_clock(host);
+	msdc_gate_clock(mmc);
 release_mem:
 	if (host->dma.gpd)
 		dma_free_coherent(&pdev->dev,
@@ -2396,8 +3006,9 @@ static int msdc_drv_remove(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, NULL);
 	mmc_remove_host(host->mmc);
+	msdc_remove_device_attrs(host, msdc_attrs);
 	msdc_deinit_hw(host);
-	msdc_gate_clock(host);
+	msdc_gate_clock(mmc);
 
 	pm_runtime_disable(host->dev);
 	pm_runtime_put_noidle(host->dev);
@@ -2474,9 +3085,25 @@ static int msdc_runtime_suspend(struct device *dev)
 {
 	struct mmc_host *mmc = dev_get_drvdata(dev);
 	struct msdc_host *host = mmc_priv(mmc);
+	u32 val;
+	int ret;
 
+	if (mmc->caps2 & MMC_CAP2_CQE) {
+		cqhci_suspend(mmc);
+		val = readl(host->base + MSDC_INT);
+		writel(val, host->base + MSDC_INT);
+	}
 	msdc_save_reg(host);
-	msdc_gate_clock(host);
+	sdr_clr_bits(host->base + SDC_ADV_CFG0, 0x7 << 22);
+	msdc_gate_clock(mmc);
+
+	if (host->vcore_reg && host->vcore_max_volt) {
+		ret = regulator_set_voltage(host->vcore_reg, 0, INT_MAX);
+		if (ret < 0)
+			dev_err(host->dev, "%s set vcore voltage return: %d\n",
+				__func__, ret);
+	}
+
 	return 0;
 }
 
@@ -2484,9 +3111,27 @@ static int msdc_runtime_resume(struct device *dev)
 {
 	struct mmc_host *mmc = dev_get_drvdata(dev);
 	struct msdc_host *host = mmc_priv(mmc);
+	int ret;
 
-	msdc_ungate_clock(host);
+	if (host->vcore_reg && host->vcore_max_volt) {
+		ret = regulator_set_voltage(host->vcore_reg,
+					    host->vcore_max_volt,
+					    host->vcore_max_volt);
+		if (ret < 0)
+			dev_err(host->dev, "%s set vcore voltage return: %d\n",
+				__func__, ret);
+	}
+
+	msdc_ungate_clock(mmc);
 	msdc_restore_reg(host);
+	sdr_set_bits(host->base + SDC_ADV_CFG0, 0x7 << 22);
+
+	if (host != NULL)
+		host->pc_suspend ++;
+
+	if (mmc->caps2 & MMC_CAP2_CQE)
+		cqhci_resume(mmc);
+
 	return 0;
 }
 #endif
