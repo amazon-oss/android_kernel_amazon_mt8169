@@ -148,7 +148,7 @@ struct unwind_info_rms {
 #define AEE_API_CALL_INTERVAL   (120 * HZ)
 #define AEE_API_CALL_BURST      2
 
-#if defined(MODULE) || IS_BUILTIN(CONFIG_MTK_AEE_AED)
+#if IS_BUILTIN(CONFIG_MTK_AEE_AED) || (defined(MODULE) && IS_ENABLED(CONFIG_MTK_AEE_AED))
 #define aee_kernel_exception(module, msg...)		\
 ({							\
 	static DEFINE_RATELIMIT_STATE(__func__##_rs,	\
