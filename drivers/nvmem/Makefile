@@ -52,5 +52,7 @@ obj-$(CONFIG_NVMEM_ZYNQMP)	+= nvmem_zynqmp_nvmem.o
 nvmem_zynqmp_nvmem-y		:= zynqmp_nvmem.o
 obj-$(CONFIG_SPRD_EFUSE)	+= nvmem_sprd_efuse.o
 nvmem_sprd_efuse-y		:= sprd-efuse.o
+obj-$(CONFIG_MTK_DEVINFO)	+= nvmem_mtk-devinfo.o
+nvmem_mtk-devinfo-y		:= mtk-devinfo.o
 obj-$(CONFIG_MT635X_EFUSE)	+= nvmem-mt635x-efuse.o
 nvmem-mt635x-efuse-y		:= mt635x-efuse.o
