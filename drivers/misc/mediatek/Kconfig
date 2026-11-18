@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0
 
+menu "Power, PMIC, Battery & Low Power"
+source "drivers/misc/mediatek/qos/Kconfig"
+endmenu # Power
+
 menu "SSPM"
 source "drivers/misc/mediatek/sspm/Kconfig"
 endmenu # SSPM
