@@ -13,6 +13,8 @@
 #include <linux/regulator/consumer.h>
 #include <linux/soc/mediatek/infracfg.h>
 
+#include "mtk-scpsys.h"
+
 #include <dt-bindings/power/mt2701-power.h>
 #include <dt-bindings/power/mt2712-power.h>
 #include <dt-bindings/power/mt6797-power.h>
@@ -157,6 +159,28 @@ struct scp_soc_data {
 	const struct scp_ctrl_reg regs;
 	bool bus_prot_reg_update;
 };
+
+static BLOCKING_NOTIFIER_HEAD(scpsys_notifier_list);
+
+int register_scpsys_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_register(&scpsys_notifier_list, nb);
+}
+EXPORT_SYMBOL_GPL(register_scpsys_notifier);
+
+int unregister_scpsys_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_unregister(&scpsys_notifier_list, nb);
+}
+EXPORT_SYMBOL_GPL(unregister_scpsys_notifier);
+
+static struct apu_callbacks *g_apucb;
+
+void register_apu_callback(struct apu_callbacks *apucb)
+{
+	g_apucb = apucb;
+}
+EXPORT_SYMBOL_GPL(register_apu_callback);
 
 static int scpsys_domain_is_on(struct scp_domain *scpd)
 {
