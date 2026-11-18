@@ -1184,6 +1184,8 @@ source "drivers/hid/i2c-hid/Kconfig"
 
 source "drivers/hid/intel-ish-hid/Kconfig"
 
+source "drivers/hid/i2c_hid_of_nvt_ts/Kconfig"
+
 source "drivers/hid/hid-focal/Kconfig"
 
 source "drivers/hid/ILITEK_HID_over_I2c/Kconfig"
