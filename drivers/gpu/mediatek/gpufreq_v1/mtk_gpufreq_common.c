@@ -15,7 +15,9 @@
  */
 #include <linux/slab.h>
 #include <aee.h>
+#if IS_ENABLED(CONFIG_MTK_AEE_AED)
 #include <aed.h>
+#endif
 #include "mtk_gpufreq_common.h"
 #ifdef ENABLE_COMMON_DVFS
 #include "mtk_gpufreq.h"
