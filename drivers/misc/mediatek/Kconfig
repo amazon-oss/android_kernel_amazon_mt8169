@@ -42,3 +42,7 @@ config SVP_DISPLAY_DYNAMIC_SEC_BUF
 		This configure enables SVP display to allocate its secure memory by
 		CMA dynamically.
 
+menu "Debug, log, trace"
+source "drivers/misc/mediatek/boot/Kconfig"
+endmenu # Debug
+
