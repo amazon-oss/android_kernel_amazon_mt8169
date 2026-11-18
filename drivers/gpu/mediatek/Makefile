@@ -35,4 +35,12 @@ ifneq ($(CONFIG_MTK_GPU_SUPPORT),)
 	obj-y += hal/
 	obj-y += ged/
 
+# GPU R5P0
+ifeq ($(CONFIG_MTK_GPU_R5P0),y)
+    obj-y += $(subst ",,$(CONFIG_MTK_PLATFORM))/
+else ifneq ($(word 1,$(MTK_GPU_VERSION)),)
+    obj-y += gpu_$(word 1,$(MTK_GPU_VERSION))/
+else
+    obj-y += $(subst ",,$(CONFIG_MTK_PLATFORM))/
+endif
 endif
