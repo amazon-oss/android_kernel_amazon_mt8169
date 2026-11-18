@@ -27,6 +27,10 @@
  * various states of availability.
  */
 LIST_HEAD(opp_tables);
+
+/* OPP tables with uninitialized required OPPs */
+LIST_HEAD(lazy_opp_tables);
+
 /* Lock to allow exclusive modification to the device and opp lists */
 DEFINE_MUTEX(opp_table_lock);
 
@@ -108,6 +112,34 @@ unsigned long dev_pm_opp_get_voltage(struct dev_pm_opp *opp)
 	return opp->supplies[0].u_volt;
 }
 EXPORT_SYMBOL_GPL(dev_pm_opp_get_voltage);
+
+/**
+ * dev_pm_opp_get_voltage_supply() - Gets the voltage corresponding to an opp
+ * with index
+ * @opp:        opp for which voltage has to be returned for
+ * @index:      index to specify the returned supplies
+ *
+ * Return: voltage in micro volt corresponding to the opp with index, else
+ * return 0
+ *
+ * This is useful for devices with multiple power supplies.
+ */
+unsigned long dev_pm_opp_get_voltage_supply(struct dev_pm_opp *opp,
+					    unsigned int index)
+{
+	if (IS_ERR_OR_NULL(opp)) {
+		pr_err("%s: Invalid parameters\n", __func__);
+		return 0;
+	}
+
+	if (index >= opp->opp_table->regulator_count) {
+		pr_err("%s: Invalid supply index: %u\n", __func__, index);
+		return 0;
+	}
+
+	return opp->supplies[index].u_volt;
+}
+EXPORT_SYMBOL_GPL(dev_pm_opp_get_voltage_supply);
 
 /**
  * dev_pm_opp_get_freq() - Gets the frequency corresponding to an available opp
@@ -754,6 +786,20 @@ static int _set_required_opps(struct device *dev,
 	if (!required_opp_tables)
 		return 0;
 
+	/*
+	 * We only support genpd's OPPs in the "required-opps" for now, as we
+	 * don't know much about other use cases. Error out if the required OPP
+	 * doesn't belong to a genpd.
+	 */
+	if (unlikely(!required_opp_tables[0]->is_genpd)) {
+		dev_err(dev, "required-opps don't belong to a genpd\n");
+		return -ENOENT;
+	}
+
+	/* required-opps not fully initialized yet */
+	if (lazy_linking_pending(opp_table))
+		return -EBUSY;
+
 	/* Single genpd case */
 	if (!genpd_virt_devs) {
 		pstate = likely(opp) ? opp->required_opps[0]->pstate : 0;
@@ -966,6 +1012,7 @@ static struct opp_table *_allocate_opp_table(struct device *dev, int index)
 	mutex_init(&opp_table->lock);
 	mutex_init(&opp_table->genpd_virt_dev_lock);
 	INIT_LIST_HEAD(&opp_table->dev_list);
+	INIT_LIST_HEAD(&opp_table->lazy);
 
 	/* Mark regulator count uninitialized */
 	opp_table->regulator_count = -1;
@@ -1322,6 +1369,21 @@ static int _opp_is_duplicate(struct device *dev, struct dev_pm_opp *new_opp,
 	return 0;
 }
 
+void _required_opps_available(struct dev_pm_opp *opp, int count)
+{
+	int i;
+
+	for (i = 0; i < count; i++) {
+		if (opp->required_opps[i]->available)
+			continue;
+
+		opp->available = false;
+		pr_warn("%s: OPP not supported by required OPP %pOF (%lu)\n",
+			 __func__, opp->required_opps[i]->np, opp->rate);
+		return;
+	}
+}
+
 /*
  * Returns:
  * 0: On success. And appropriate error message for duplicate OPPs.
@@ -1362,6 +1424,12 @@ int _opp_add(struct device *dev, struct dev_pm_opp *new_opp,
 		dev_warn(dev, "%s: OPP not supported by regulators (%lu)\n",
 			 __func__, new_opp->rate);
 	}
+
+	/* required-opps not fully initialized yet */
+	if (lazy_linking_pending(opp_table))
+		return 0;
+
+	_required_opps_available(new_opp, opp_table->required_opp_count);
 
 	return 0;
 }
@@ -1942,6 +2010,61 @@ void dev_pm_opp_detach_genpd(struct opp_table *opp_table)
 EXPORT_SYMBOL_GPL(dev_pm_opp_detach_genpd);
 
 /**
+ * dev_pm_opp_xlate_required_opp() - Find required OPP for @src_table OPP.
+ * @src_table: OPP table which has @dst_table as one of its required OPP table.
+ * @dst_table: Required OPP table of the @src_table.
+ * @src_opp: OPP from the @src_table.
+ *
+ * This function returns the OPP (present in @dst_table) pointed out by the
+ * "required-opps" property of the @src_opp (present in @src_table).
+ *
+ * The callers are required to call dev_pm_opp_put() for the returned OPP after
+ * use.
+ *
+ * Return: pointer to 'struct dev_pm_opp' on success and errorno otherwise.
+ */
+struct dev_pm_opp *dev_pm_opp_xlate_required_opp(struct opp_table *src_table,
+						 struct opp_table *dst_table,
+						 struct dev_pm_opp *src_opp)
+{
+	struct dev_pm_opp *opp, *dest_opp = ERR_PTR(-ENODEV);
+	int i;
+
+	if (!src_table || !dst_table || !src_opp ||
+	    !src_table->required_opp_tables)
+		return ERR_PTR(-EINVAL);
+
+	/* required-opps not fully initialized yet */
+	if (lazy_linking_pending(src_table))
+		return ERR_PTR(-EBUSY);
+
+	for (i = 0; i < src_table->required_opp_count; i++) {
+		if (src_table->required_opp_tables[i] == dst_table) {
+			mutex_lock(&src_table->lock);
+
+			list_for_each_entry(opp, &src_table->opp_list, node) {
+				if (opp == src_opp) {
+					dest_opp = opp->required_opps[i];
+					dev_pm_opp_get(dest_opp);
+					break;
+				}
+			}
+
+			mutex_unlock(&src_table->lock);
+			break;
+		}
+	}
+
+	if (IS_ERR(dest_opp)) {
+		pr_err("%s: Couldn't find matching OPP (%p: %p)\n", __func__,
+		       src_table, dst_table);
+	}
+
+	return dest_opp;
+}
+EXPORT_SYMBOL_GPL(dev_pm_opp_xlate_required_opp);
+
+/**
  * dev_pm_opp_xlate_performance_state() - Find required OPP's pstate for src_table.
  * @src_table: OPP table which has dst_table as one of its required OPP table.
  * @dst_table: Required OPP table of the src_table.
@@ -1974,6 +2097,10 @@ int dev_pm_opp_xlate_performance_state(struct opp_table *src_table,
 	 */
 	if (!src_table->required_opp_count)
 		return pstate;
+
+	/* required-opps not fully initialized yet */
+	if (lazy_linking_pending(src_table))
+		return -EBUSY;
 
 	for (i = 0; i < src_table->required_opp_count; i++) {
 		if (src_table->required_opp_tables[i]->np == dst_table->np)
@@ -2110,6 +2237,76 @@ put_table:
 	dev_pm_opp_put_opp_table(opp_table);
 	return r;
 }
+
+/**
+ * dev_pm_opp_adjust_voltage() - helper to change the voltage of an OPP
+ * @dev:		device for which we do this operation
+ * @freq:		OPP frequency to adjust voltage of
+ * @u_volt:		new OPP target voltage
+ * @u_volt_min:		new OPP min voltage
+ * @u_volt_max:		new OPP max voltage
+ *
+ * Return: -EINVAL for bad pointers, -ENOMEM if no memory available for the
+ * copy operation, returns 0 if no modifcation was done OR modification was
+ * successful.
+ */
+int dev_pm_opp_adjust_voltage(struct device *dev, unsigned long freq,
+			      unsigned long u_volt, unsigned long u_volt_min,
+			      unsigned long u_volt_max)
+
+{
+	struct opp_table *opp_table;
+	struct dev_pm_opp *tmp_opp, *opp = ERR_PTR(-ENODEV);
+	int r = 0;
+
+	/* Find the opp_table */
+	opp_table = _find_opp_table(dev);
+	if (IS_ERR(opp_table)) {
+		r = PTR_ERR(opp_table);
+		dev_warn(dev, "%s: Device OPP not found (%d)\n", __func__, r);
+		return r;
+	}
+
+	mutex_lock(&opp_table->lock);
+
+	/* Do we have the frequency? */
+	list_for_each_entry(tmp_opp, &opp_table->opp_list, node) {
+		if (tmp_opp->rate == freq) {
+			opp = tmp_opp;
+			break;
+		}
+	}
+
+	if (IS_ERR(opp)) {
+		r = PTR_ERR(opp);
+		goto adjust_unlock;
+	}
+
+	/* Is update really needed? */
+	if (opp->supplies->u_volt == u_volt)
+		goto adjust_unlock;
+
+	opp->supplies->u_volt = u_volt;
+	opp->supplies->u_volt_min = u_volt_min;
+	opp->supplies->u_volt_max = u_volt_max;
+
+	dev_pm_opp_get(opp);
+	mutex_unlock(&opp_table->lock);
+
+	/* Notify the voltage change of the OPP */
+	blocking_notifier_call_chain(&opp_table->head, OPP_EVENT_ADJUST_VOLTAGE,
+				     opp);
+
+	dev_pm_opp_put(opp);
+	goto adjust_put_table;
+
+adjust_unlock:
+	mutex_unlock(&opp_table->lock);
+adjust_put_table:
+	dev_pm_opp_put_opp_table(opp_table);
+	return r;
+}
+EXPORT_SYMBOL_GPL(dev_pm_opp_adjust_voltage);
 
 /**
  * dev_pm_opp_enable() - Enable a specific OPP
