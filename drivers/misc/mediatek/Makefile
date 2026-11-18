@@ -14,6 +14,7 @@ obj-$(CONFIG_MTK_IOMMU_MISC) += iommu/
 obj-$(CONFIG_MTK_POWER_THROTTLING_COMMON) += power_throttling/
 obj-$(CONFIG_EXTCON_MTK_USB) += extcon/
 obj-$(CONFIG_INTERCONNECT_MTK_EXTENSION) += mtk-interconnect/
+obj-$(CONFIG_MTK_TEE_GP_SUPPORT) += tee_gp/
 obj-$(CONFIG_RT_REGMAP) += rt-regmap/
 obj-$(CONFIG_MTK_MDP) += mdp/
 obj-$(CONFIG_MTK_DVFSRC_HELPER) += dvfsrc/
