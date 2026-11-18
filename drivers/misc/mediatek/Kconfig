@@ -10,6 +10,7 @@ endmenu # Power
 menu "SSPM"
 source "drivers/misc/mediatek/sspm/Kconfig"
 endmenu # SSPM
+menu "MultiMedia, Display, Camera"
 config MTK_SEC_VIDEO_PATH_SUPPORT
 	bool "Enable MTK Secure Video Path Support"
 	default n
@@ -41,6 +42,9 @@ config SVP_DISPLAY_DYNAMIC_SEC_BUF
 	help
 		This configure enables SVP display to allocate its secure memory by
 		CMA dynamically.
+
+source "drivers/misc/mediatek/iommu/Kconfig"
+endmenu # MultiMedia, Display, Camera
 
 menu "Debug, log, trace"
 source "drivers/misc/mediatek/boot/Kconfig"
