@@ -266,6 +266,80 @@ config COMMON_CLK_MT8135
 	---help---
 	  This driver supports MediaTek MT8135 clocks.
 
+config COMMON_CLK_MT8169
+	tristate "Clock driver for MediaTek MT8169"
+	depends on (ARCH_MEDIATEK && (ARM64 || ARM)) || COMPILE_TEST
+	select COMMON_CLK_MEDIATEK
+	default ARCH_MEDIATEK && ARM64
+	help
+	  This driver supports MediaTek MT8169 basic clocks.
+
+config COMMON_CLK_MT8169_AUDSYS
+	tristate "Clock driver for MediaTek MT8169 audsys"
+	depends on COMMON_CLK_MT8169
+	help
+	  This driver supports MediaTek MT8169 audsys clocks.
+
+config COMMON_CLK_MT8169_CAMSYS
+	tristate "Clock driver for MediaTek MT8169 camsys"
+	depends on COMMON_CLK_MT8169
+	help
+	  This driver supports MediaTek MT8169 camsys and camsys_raw clocks.
+
+config COMMON_CLK_MT8169_IMGSYS
+	tristate "Clock driver for MediaTek MT8169 imgsys"
+	depends on COMMON_CLK_MT8169
+	help
+	  This driver supports MediaTek MT8169 imgsys1 and imgsys2 clocks.
+
+config COMMON_CLK_MT8169_IMP_IIC_WRAP
+	tristate "Clock driver for MediaTek MT8169 imp_iic_wrap"
+	depends on COMMON_CLK_MT8169
+	help
+	  This driver supports MediaTek MT8169 imp_iic_wrap clocks.
+
+config COMMON_CLK_MT8169_IPESYS
+	tristate "Clock driver for MediaTek MT8169 ipesys"
+	depends on COMMON_CLK_MT8169
+	help
+	  This driver supports MediaTek MT8169 ipesys clocks.
+
+config COMMON_CLK_MT8169_MDPSYS
+	tristate "Clock driver for MediaTek MT8169 mdpsys"
+	depends on COMMON_CLK_MT8169
+	help
+	  This driver supports MediaTek MT8169 mdpsys clocks.
+
+config COMMON_CLK_MT8169_MFGCFG
+	tristate "Clock driver for MediaTek MT8169 mfgcfg"
+	depends on COMMON_CLK_MT8169
+	help
+	  This driver supports MediaTek MT8169 mfgsys clocks.
+
+config COMMON_CLK_MT8169_MMSYS
+	tristate "Clock driver for MediaTek MT8169 mmsys"
+	depends on COMMON_CLK_MT8169
+	help
+	  This driver supports MediaTek MT8169 mmsys clocks.
+
+config COMMON_CLK_MT8169_VDECSYS
+	tristate "Clock driver for MediaTek MT8169 vdecsys"
+	depends on COMMON_CLK_MT8169
+	help
+	  This driver supports MediaTek MT8169 vdecsys clocks.
+
+config COMMON_CLK_MT8169_VENCSYS
+	tristate "Clock driver for MediaTek MT8169 vencsys"
+	depends on COMMON_CLK_MT8169
+	help
+	  This driver supports MediaTek MT8169 vencsys clocks.
+
+config COMMON_CLK_MT8169_WPESYS
+	tristate "Clock driver for MediaTek MT8169 wpesys"
+	depends on COMMON_CLK_MT8169
+	help
+	  This driver supports MediaTek MT8169 wpesys clocks.
+
 config COMMON_CLK_MT8173
 	bool "Clock driver for MediaTek MT8173"
 	depends on ARCH_MEDIATEK || COMPILE_TEST
