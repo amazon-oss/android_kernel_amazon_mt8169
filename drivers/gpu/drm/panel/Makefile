@@ -39,3 +39,4 @@ obj-$(CONFIG_DRM_PANEL_TPO_TD043MTEA1) += panel-tpo-td043mtea1.o
 obj-$(CONFIG_DRM_PANEL_TPO_TPG110) += panel-tpo-tpg110.o
 obj-$(CONFIG_DRM_PANEL_TRULY_NT35597_WQXGA) += panel-truly-nt35597.o
 obj-$(CONFIG_DRM_PANEL_ST7705_WXGA_DSI_VDO_RASPITE) += panel-st7705_wxga_dsi_vdo_raspite.o
+obj-$(CONFIG_DRM_PANEL_ILI9881C_WXGA_DSI_VDO_RASPITE) += panel-ili9881c_wxga_dsi_vdo_raspite.o
