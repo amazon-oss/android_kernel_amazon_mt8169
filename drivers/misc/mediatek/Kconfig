@@ -1,1 +1,33 @@
 # SPDX-License-Identifier: GPL-2.0
+config MTK_SEC_VIDEO_PATH_SUPPORT
+	bool "Enable MTK Secure Video Path Support"
+	default n
+	depends on MTK_IN_HOUSE_TEE_SUPPORT || TRUSTONIC_TEE_SUPPORT || \
+		MTK_GOOGLE_TRUSTY_SUPPORT || MICROTRUST_TEE_SUPPORT || \
+		(TEE)
+	help
+		This enable MTK Secure Video Path function of Widevine Level1,
+		HW protect the online secure video streaming by ARM/Trustzone
+		support TEE OS of: Trustonic, Microtrust, Blowfish .etc
+		relative modules include: DRM, vdec, venc, cmdq, m4u, display,
+		tplay/DXCC,ssvp, secmem, TEE frameworks, keyinstall, DAPC, MPU,
+		ION, gralloc,RPMB, DXCC, mediacodec, WFD, MDP.etc
+		relative options including: MTK_TEE_SUPPORT, MTK_GP_SUPPORT,
+		MTK_DRM_L1_SUPPORT, MTK_PERSIST_PARTITION_SUPPORT,
+		MTK_DRM_KEY_MNG_SUPPORT.
+
+config WFD_DYNAMIC_SEC_BUF
+	bool "Enable MTK WFD Dynamic Secure Buffer Support"
+	default n
+	depends on (MTK_IN_HOUSE_TEE_SUPPORT) || (TEE)
+	help
+		This configure enables Miracast to allocate its secure memory
+		by CMA dynamically.
+
+config SVP_DISPLAY_DYNAMIC_SEC_BUF
+	bool "Enable MTK SVP Display Dynamic Secure Buffer Support"
+	depends on (MTK_IN_HOUSE_TEE_SUPPORT) || (TEE)
+	help
+		This configure enables SVP display to allocate its secure memory by
+		CMA dynamically.
+
