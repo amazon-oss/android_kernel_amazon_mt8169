@@ -16,23 +16,37 @@
 #include <linux/list.h>
 #include <linux/spinlock.h>
 #include <soc/mediatek/smi.h>
+#include <dt-bindings/memory/mtk-smi-larb-port.h>
 
 struct mtk_iommu_suspend_reg {
-	u32				standard_axi_mode;
+	u32				misc_ctrl;
 	u32				dcm_dis;
 	u32				ctrl_reg;
 	u32				int_control0;
 	u32				int_main_control;
 	u32				ivrp_paddr;
 	u32				vld_pa_rng;
+	u32				wr_len;
 };
 
 enum mtk_iommu_plat {
 	M4U_MT2701,
 	M4U_MT2712,
+	M4U_MT6779,
+	M4U_MT6873,
+	M4U_MT8169,
 	M4U_MT8173,
 	M4U_MT8183,
 };
+
+enum mtk_iommu_type {
+	MTK_IOMMU_MM,
+	MTK_IOMMU_APU,
+	MTK_IOMMU_INFRA,
+};
+
+struct mtk_iommu_iova_region;
+struct mtk_iommu_resv_iova_region;
 
 struct mtk_iommu_plat_data {
 	enum mtk_iommu_plat m4u_plat;
@@ -40,9 +54,25 @@ struct mtk_iommu_plat_data {
 
 	/* HW will use the EMI clock if there isn't the "bclk". */
 	bool                has_bclk;
+	bool		    has_misc_ctrl;
+	bool		    has_sub_comm;
 	bool                has_vld_pa_rng;
+	bool                has_wr_len;
 	bool                reset_axi;
-	unsigned char       larbid_remap[MTK_LARB_NR_MAX];
+	bool		    iova_34_en;
+	bool		    is_apu;
+	u32                 inv_sel_reg;
+	unsigned char       larbid_remap[8][4];
+
+	const unsigned int  iova_region_cnt;
+	const struct mtk_iommu_iova_region	*iova_region;
+
+	/* reserve/dir-mapping iova region data */
+	const unsigned int resv_cnt;
+	const struct mtk_iommu_resv_iova_region *resv_region;
+
+	enum mtk_iommu_type type;
+	struct list_head    *hw_list;
 };
 
 struct mtk_iommu_domain;
@@ -52,17 +82,19 @@ struct mtk_iommu_data {
 	int				irq;
 	struct device			*dev;
 	struct clk			*bclk;
+	struct clk			*clk_rsi;
 	phys_addr_t			protect_base; /* protect memory base */
 	struct mtk_iommu_suspend_reg	reg;
 	struct mtk_iommu_domain		*m4u_dom;
-	struct iommu_group		*m4u_group;
+	struct iommu_group		*m4u_group[MTK_M4U_DOM_NR_MAX];
 	bool                            enable_4GB;
-	bool				tlb_flush_active;
 	spinlock_t			tlb_lock; /* lock for tlb range flush */
 
 	struct iommu_device		iommu;
 	const struct mtk_iommu_plat_data *plat_data;
+	struct device			*smicomm_dev;
 
+	unsigned int			cur_domid;
 	struct list_head		list;
 	struct mtk_smi_larb_iommu	larb_imu[MTK_LARB_NR_MAX];
 };
