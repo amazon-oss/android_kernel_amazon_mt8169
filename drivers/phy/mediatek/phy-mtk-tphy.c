@@ -90,6 +90,13 @@
 #define P2C_DTM0_PART_MASK \
 		(P2C_FORCE_DATAIN | P2C_FORCE_DM_PULLDOWN | \
 		P2C_FORCE_DP_PULLDOWN | P2C_FORCE_XCVRSEL | \
+		P2C_FORCE_SUSPENDM | P2C_FORCE_TERMSEL | \
+		P2C_RG_DMPULLDOWN | P2C_RG_DPPULLDOWN | \
+		P2C_RG_TERMSEL)
+
+#define P2C_DTM0_PART_MASK2 \
+		(P2C_FORCE_DM_PULLDOWN | P2C_FORCE_DP_PULLDOWN | \
+		P2C_FORCE_XCVRSEL | P2C_FORCE_SUSPENDM | \
 		P2C_FORCE_TERMSEL | P2C_RG_DMPULLDOWN | \
 		P2C_RG_DPPULLDOWN | P2C_RG_TERMSEL)
 
@@ -120,6 +127,7 @@
 #define U3P_U3_PHYA_REG1	0x004
 #define P3A_RG_CLKDRV_AMP		GENMASK(31, 29)
 #define P3A_RG_CLKDRV_AMP_VAL(x)	((0x7 & (x)) << 29)
+#define RG_SSUSB_VA_ON			BIT(29)
 
 #define U3P_U3_PHYA_REG6	0x018
 #define P3A_RG_TX_EIDLE_CM		GENMASK(31, 28)
@@ -263,6 +271,9 @@
 #define RG_CDR_BIRLTD0_GEN3_MSK		GENMASK(4, 0)
 #define RG_CDR_BIRLTD0_GEN3_VAL(x)	(0x1f & (x))
 
+#define PHY_MODE_BC11_SW_SET 1
+#define PHY_MODE_BC11_SW_CLR 2
+
 enum mtk_phy_version {
 	MTK_PHY_V1 = 1,
 	MTK_PHY_V2,
@@ -401,6 +412,11 @@ static void u3_phy_instance_init(struct mtk_tphy *tphy,
 	struct u3phy_banks *u3_banks = &instance->u3_banks;
 	u32 tmp;
 
+	/* ssusb power on */
+	tmp = readl(u3_banks->phya + U3P_U3_PHYA_REG1);
+	tmp |= RG_SSUSB_VA_ON;
+	writel(tmp, u3_banks->phya + U3P_U3_PHYA_REG1);
+
 	/* gating PCIe Analog XTAL clock */
 	tmp = readl(u3_banks->spllc + U3P_SPLLC_XTALCTL3);
 	tmp |= XC3_RG_U3_XTAL_RX_PWD | XC3_RG_U3_FRC_XTAL_RX_PWD;
@@ -538,7 +554,7 @@ static void u2_phy_instance_power_on(struct mtk_tphy *tphy,
 		tmp |= P2C_RG_SUSPENDM | P2C_FORCE_SUSPENDM;
 		writel(tmp, com + U3P_U2PHYDTM0);
 	}
-	dev_dbg(tphy->dev, "%s(%d)\n", __func__, index);
+	dev_info(tphy->dev, "%s(%d)\n", __func__, index);
 }
 
 static void u2_phy_instance_power_off(struct mtk_tphy *tphy,
@@ -551,6 +567,7 @@ static void u2_phy_instance_power_off(struct mtk_tphy *tphy,
 
 	tmp = readl(com + U3P_U2PHYDTM0);
 	tmp &= ~(P2C_RG_XCVRSEL | P2C_RG_DATAIN);
+	tmp |= P2C_RG_XCVRSEL_VAL(1) | P2C_DTM0_PART_MASK2;
 	writel(tmp, com + U3P_U2PHYDTM0);
 
 	/* OTG Disable */
@@ -573,7 +590,7 @@ static void u2_phy_instance_power_off(struct mtk_tphy *tphy,
 		writel(tmp, com + U3D_U2PHYDCR0);
 	}
 
-	dev_dbg(tphy->dev, "%s(%d)\n", __func__, index);
+	dev_info(tphy->dev, "%s(%d)\n", __func__, index);
 }
 
 static void u2_phy_instance_exit(struct mtk_tphy *tphy,
@@ -597,27 +614,48 @@ static void u2_phy_instance_exit(struct mtk_tphy *tphy,
 
 static void u2_phy_instance_set_mode(struct mtk_tphy *tphy,
 				     struct mtk_phy_instance *instance,
-				     enum phy_mode mode)
+				     enum phy_mode mode,
+				     int submode)
 {
 	struct u2phy_banks *u2_banks = &instance->u2_banks;
 	u32 tmp;
 
-	tmp = readl(u2_banks->com + U3P_U2PHYDTM1);
-	switch (mode) {
-	case PHY_MODE_USB_DEVICE:
-		tmp |= P2C_FORCE_IDDIG | P2C_RG_IDDIG;
-		break;
-	case PHY_MODE_USB_HOST:
-		tmp |= P2C_FORCE_IDDIG;
-		tmp &= ~P2C_RG_IDDIG;
-		break;
-	case PHY_MODE_USB_OTG:
-		tmp &= ~(P2C_FORCE_IDDIG | P2C_RG_IDDIG);
-		break;
-	default:
-		return;
+	dev_info(tphy->dev, "%s mode(%d), submode(%d)\n", __func__,
+		mode, submode);
+
+	if (!submode) {
+		tmp = readl(u2_banks->com + U3P_U2PHYDTM1);
+		switch (mode) {
+		case PHY_MODE_USB_DEVICE:
+			tmp |= P2C_FORCE_IDDIG | P2C_RG_IDDIG;
+			break;
+		case PHY_MODE_USB_HOST:
+			tmp |= P2C_FORCE_IDDIG;
+			tmp &= ~P2C_RG_IDDIG;
+			break;
+		case PHY_MODE_USB_OTG:
+			tmp &= ~(P2C_FORCE_IDDIG | P2C_RG_IDDIG);
+			break;
+		default:
+			return;
+		}
+		writel(tmp, u2_banks->com + U3P_U2PHYDTM1);
+	} else {
+		switch (submode) {
+		case PHY_MODE_BC11_SW_SET:
+			tmp = readl(u2_banks->com + U3P_USBPHYACR6);
+			tmp |= PA6_RG_U2_BC11_SW_EN;
+			writel(tmp, u2_banks->com + U3P_USBPHYACR6);
+			break;
+		case PHY_MODE_BC11_SW_CLR:
+			tmp = readl(u2_banks->com + U3P_USBPHYACR6);
+			tmp &= ~PA6_RG_U2_BC11_SW_EN;
+			writel(tmp, u2_banks->com + U3P_USBPHYACR6);
+			break;
+		default:
+			return;
+		}
 	}
-	writel(tmp, u2_banks->com + U3P_U2PHYDTM1);
 }
 
 static void pcie_phy_instance_init(struct mtk_tphy *tphy,
@@ -977,7 +1015,7 @@ static int mtk_phy_set_mode(struct phy *phy, enum phy_mode mode, int submode)
 	struct mtk_tphy *tphy = dev_get_drvdata(phy->dev.parent);
 
 	if (instance->type == PHY_TYPE_USB2)
-		u2_phy_instance_set_mode(tphy, instance, mode);
+		u2_phy_instance_set_mode(tphy, instance, mode, submode);
 
 	return 0;
 }
