@@ -141,3 +141,4 @@ obj-$(CONFIG_I2C_HID)		+= i2c-hid/
 obj-$(CONFIG_INTEL_ISH_HID)	+= intel-ish-hid/
 obj-$(INTEL_ISH_FIRMWARE_DOWNLOADER)	+= intel-ish-hid/
 obj-$(CONFIG_STYLUS_BATTERY_ALGO)	+= stylus/
+obj-$(CONFIG_I2C_HID_ILITEK)	+= ILITEK_HID_over_I2c/
