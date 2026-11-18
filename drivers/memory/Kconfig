@@ -164,6 +164,7 @@ config PL353_SMC
 	  Controller(SMC) module.
 
 source "drivers/memory/samsung/Kconfig"
+source "drivers/memory/mediatek/Kconfig"
 source "drivers/memory/tegra/Kconfig"
 
 endif
