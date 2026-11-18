@@ -1,0 +1,30 @@
+menu "Amazon"
+
+config AMAZON
+	bool "Amazon Drivers"
+	default N
+	help
+	  Enable support for various drivers needed on the Amazon Fire OS platform
+
+if AMAZON
+
+config USER_BUILD
+	bool "USER_BUILD"
+	default n
+	help
+	  Indicate if user build
+
+config AMAZON_SIGN_OF_LIFE
+	tristate "Amazon Sign of Life"
+	help
+	  enable the life cycle metrics to log device boot and shutdown information
+
+config AMAZON_POWEROFF_LOG
+	bool "Long press key power off log"
+	default N
+	help
+	  enable Long press key power off log
+
+endif #if AMAZON
+
+endmenu
