@@ -30,13 +30,67 @@
 
 #include "i2c-hid.h"
 
-struct i2c_hid_of {
-	struct i2chid_ops ops;
+#define TP_VENDOR_FOCAL		0
+#define TP_VENDOR_ILITEK	1
+#define TP_VENDOR_NOVATEK	2
 
-	struct i2c_client *client;
-	struct regulator_bulk_data supplies[2];
-	int post_power_delay_ms;
-};
+#define LCM_ID_FT8205_STARRY	0x05
+#define LCM_ID_ILI9882T_TG	0x06
+#define LCM_ID_FT8205_KD	0x09
+#define LCM_ID_ILI9882T_KD	0x0A
+#define LCM_ID_NT36523N_KD	0x0C
+#define LCM_ID_ILI9882T_STARRY	0x0E
+#define LCM_ID_INVALID		0xFF
+
+extern unsigned int idme_get_lcmid_info(void);
+
+extern int fts_hid_of_core_probe(struct i2c_client *client,
+				 struct i2chid_ops *ops,
+				 u16 hid_descriptor_address);
+extern int fts_ts_remove(struct i2c_client *client);
+extern int ili_hid_of_core_probe(struct i2c_client *client,
+				 struct i2chid_ops *ops,
+				 u16 hid_descriptor_address);
+extern int ilitek_plat_remove(struct i2c_client *client);
+extern int nvt_hid_of_core_probe(struct i2c_client *client,
+				 struct i2chid_ops *ops,
+				 u16 hid_descriptor_address);
+extern int nvt_i2c_hid_core_remove(struct i2c_client *client);
+
+static int vendor_id = LCM_ID_INVALID;
+int (*tp_probe)(struct i2c_client *client, struct i2chid_ops *ops,
+		u16 hid_descriptor_address);
+int (*tp_remove)(struct i2c_client *client);
+
+static int get_tp_vendor_id(struct device *dev)
+{
+	unsigned int lcm_id = idme_get_lcmid_info();
+
+	switch (lcm_id) {
+	case LCM_ID_FT8205_STARRY:
+	case LCM_ID_FT8205_KD:
+		vendor_id = TP_VENDOR_FOCAL;
+		break;
+	case LCM_ID_ILI9882T_TG:
+	case LCM_ID_ILI9882T_KD:
+	case LCM_ID_ILI9882T_STARRY:
+		vendor_id = TP_VENDOR_ILITEK;
+		break;
+	case LCM_ID_NT36523N_KD:
+		vendor_id = TP_VENDOR_NOVATEK;
+		break;
+	default:
+		if (lcm_id == LCM_ID_INVALID)
+			dev_err(dev, "get lcm_id failed.\n");
+		dev_err(dev, "%s, vendor id:[%d] not support.\n", __func__,
+			lcm_id);
+		return -EINVAL;
+	}
+
+	dev_dbg(dev, "%s, vendor id = 0x%x\n", __func__, lcm_id);
+
+	return 0;
+}
 
 static int i2c_hid_of_power_up(struct i2chid_ops *ops)
 {
@@ -74,6 +128,17 @@ static int i2c_hid_of_probe(struct i2c_client *client,
 	int ret;
 	u32 val;
 
+	dev_warn(&client->dev, "%s called for i2c 0x%02x\n", __func__,
+		 client->addr);
+
+	/* Make sure there is something at this address */
+	ret = i2c_smbus_read_byte(client);
+	if (ret < 0) {
+		dev_err(&client->dev, "nothing at this address 0x%x: %d\n",
+			client->addr, ret);
+		return -ENODEV;
+	}
+
 	ihid_of = devm_kzalloc(&client->dev, sizeof(*ihid_of), GFP_KERNEL);
 	if (!ihid_of)
 		return -ENOMEM;
@@ -105,8 +170,65 @@ static int i2c_hid_of_probe(struct i2c_client *client,
 	if (ret)
 		return ret;
 
-	return i2c_hid_core_probe(client, &ihid_of->ops,
-				  hid_descriptor_address);
+	ret = get_tp_vendor_id(&client->dev);
+	if (ret < 0) {
+		dev_err(&client->dev, "vendor_id:[%d]not support: %d\n",
+			vendor_id, ret);
+		return -EINVAL;
+	}
+
+	switch (vendor_id) {
+	case TP_VENDOR_FOCAL:
+		tp_probe = fts_hid_of_core_probe;
+		break;
+	case TP_VENDOR_ILITEK:
+		tp_probe = ili_hid_of_core_probe;
+		break;
+	case TP_VENDOR_NOVATEK:
+		tp_probe = nvt_hid_of_core_probe;
+		break;
+	default:
+		tp_probe = i2c_hid_core_probe;
+		break;
+	}
+
+	ret = tp_probe(client, &ihid_of->ops, hid_descriptor_address);
+	if (ret < 0) {
+		dev_err(&client->dev, "vendor_id:[%d] init failed: %d\n",
+			vendor_id, ret);
+		return -ENODEV;
+	}
+
+	return ret;
+}
+
+static int i2c_hid_of_remove(struct i2c_client *client)
+{
+	int ret;
+
+	switch (vendor_id) {
+	case TP_VENDOR_FOCAL:
+		tp_remove = fts_ts_remove;
+		break;
+	case TP_VENDOR_ILITEK:
+		tp_remove = ilitek_plat_remove;
+		break;
+	case TP_VENDOR_NOVATEK:
+		tp_remove = nvt_i2c_hid_core_remove;
+		break;
+	default:
+		tp_remove = i2c_hid_core_remove;
+		break;
+	}
+
+	ret = tp_remove(client);
+	if (ret < 0) {
+		dev_err(&client->dev, "vendor_id:[%d] tp_remove failed: %d\n",
+			vendor_id, ret);
+		return -ENODEV;
+	}
+
+	return ret;
 }
 
 static const struct of_device_id i2c_hid_of_match[] = {
@@ -118,6 +240,9 @@ MODULE_DEVICE_TABLE(of, i2c_hid_of_match);
 static const struct i2c_device_id i2c_hid_of_id_table[] = {
 	{ "hid", 0 },
 	{ "hid-over-i2c", 0 },
+	{ "focal_hid-over-i2c", 0 },
+	{ "ilitek_hid-over-i2c", 0 },
+	{ "i2c-hid-of-nvt-ts", 0 },
 	{ },
 };
 MODULE_DEVICE_TABLE(i2c, i2c_hid_of_id_table);
@@ -125,13 +250,15 @@ MODULE_DEVICE_TABLE(i2c, i2c_hid_of_id_table);
 static struct i2c_driver i2c_hid_of_driver = {
 	.driver = {
 		.name	= "i2c_hid_of",
+#if defined(CONFIG_PM_SLEEP) && !defined(CONFIG_I2C_HID_NO_USE_PM)
 		.pm	= &i2c_hid_core_pm,
+#endif
 		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 		.of_match_table = of_match_ptr(i2c_hid_of_match),
 	},
 
 	.probe		= i2c_hid_of_probe,
-	.remove		= i2c_hid_core_remove,
+	.remove		= i2c_hid_of_remove,
 	.shutdown	= i2c_hid_core_shutdown,
 	.id_table	= i2c_hid_of_id_table,
 };
