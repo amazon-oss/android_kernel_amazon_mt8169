@@ -186,12 +186,14 @@ int ssusb_host_disable(struct ssusb_mtk *ssusb, bool suspend)
 	if (ret)
 		dev_err(ssusb->dev, "ip sleep failed!!!\n");
 
+	usleep_range(200, 250);
+
 	return ret;
 }
 
 static void ssusb_host_setup(struct ssusb_mtk *ssusb)
 {
-	struct otg_switch_mtk *otg_sx = &ssusb->otg_switch;
+	//struct otg_switch_mtk *otg_sx = &ssusb->otg_switch;
 
 	host_ports_num_get(ssusb);
 
@@ -201,10 +203,10 @@ static void ssusb_host_setup(struct ssusb_mtk *ssusb)
 	 */
 	ssusb_host_enable(ssusb);
 
-	if (otg_sx->manual_drd_enabled)
-		ssusb_set_force_mode(ssusb, MTU3_DR_FORCE_HOST);
+	ssusb_set_force_mode(ssusb, MTU3_DR_FORCE_HOST);
 
 	/* if port0 supports dual-role, works as host mode by default */
+	ssusb_set_force_vbus(ssusb, false);
 	ssusb_set_vbus(&ssusb->otg_switch, 1);
 }
 

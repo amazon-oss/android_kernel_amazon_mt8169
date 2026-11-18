@@ -21,6 +21,7 @@
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
 #include <linux/usb/otg.h>
+#include <linux/usb/role.h>
 
 struct mtu3;
 struct mtu3_ep;
@@ -61,6 +62,9 @@ struct mtu3_request;
 
 #define MTU3_U3_IP_SLOT_DEFAULT 2
 #define MTU3_U2_IP_SLOT_DEFAULT 1
+
+#define MTU3_SW_ID_GROUND	BIT(0)
+#define MTU3_SW_VBUS_VALID	BIT(1)
 
 /**
  * IP TRUNK version
@@ -126,6 +130,20 @@ enum mtu3_dr_force_mode {
 	MTU3_DR_FORCE_NONE = 0,
 	MTU3_DR_FORCE_HOST,
 	MTU3_DR_FORCE_DEVICE,
+};
+
+/**
+ * MTU3_DR_OPERATION_OFF: force to turn off usb
+ * MTU3_DR_OPERATION_DUAL: automatically switch host and
+ *      periperal mode by usb role switch.
+ * MTU3_DR_OPERATION_HOST: force to enter host mode.
+ * MTU3_DR_OPERATION_DEVICE: force to enter peripheral mode.
+ */
+enum mtu3_dr_operation_mode {
+	MTU3_DR_OPERATION_OFF = 0,
+	MTU3_DR_OPERATION_DUAL,
+	MTU3_DR_OPERATION_HOST,
+	MTU3_DR_OPERATION_DEVICE,
 };
 
 /**
@@ -219,6 +237,9 @@ struct otg_switch_mtk {
 	bool role_sw_used;
 	bool is_u3_drd;
 	bool manual_drd_enabled;
+	u32 sw_state;
+	enum usb_role latest_role;
+	enum mtu3_dr_operation_mode op_mode;
 };
 
 /**
@@ -236,6 +257,7 @@ struct otg_switch_mtk {
  * @u3p_dis_msk: mask of disabling usb3 ports, for example, bit0==1 to
  *		disable u3port0, bit1==1 to disable u3port1,... etc
  * @dbgfs_root: only used when supports manual dual-role switch via debugfs
+ * @force_vbus: without Vbus PIN, SW need set force_vbus state for device
  * @uwk_en: it's true when supports remote wakeup in host mode
  * @uwk: syscon including usb wakeup glue layer between SSUSB IP and SPM
  * @uwk_reg_base: the base address of the wakeup glue layer in @uwk
@@ -256,17 +278,25 @@ struct ssusb_mtk {
 	struct clk *dma_clk;
 	/* otg */
 	struct otg_switch_mtk otg_switch;
+	struct delayed_work clk_ctl_dwork;
 	enum usb_dr_mode dr_mode;
 	bool is_host;
 	int u2_ports;
 	int u3_ports;
 	int u3p_dis_msk;
 	struct dentry *dbgfs_root;
+	bool force_vbus;
 	/* usb wakeup for host mode */
 	bool uwk_en;
 	struct regmap *uwk;
 	u32 uwk_reg_base;
 	u32 uwk_vers;
+	bool clk_on;
+	bool phy_on;
+	bool clk_mgr;
+	bool host_on;
+	bool keep_ao;
+	struct wakeup_source *usb_lock;
 };
 
 /**
@@ -360,10 +390,13 @@ struct mtu3 {
 	unsigned is_u3_ip:1;
 	unsigned delayed_status:1;
 	unsigned gen2cp:1;
+	unsigned async_callbacks:1;
 
 	u8 address;
 	u8 test_mode_nr;
 	u32 hw_version;
+
+	unsigned is_gadget_ready:1;
 };
 
 static inline struct mtu3 *gadget_to_mtu3(struct usb_gadget *g)
@@ -419,7 +452,15 @@ static inline void mtu3_clrbits(void __iomem *base, u32 offset, u32 bits)
 	writel((tmp & ~(bits)), addr);
 }
 
+void mtu3_regs_init(struct mtu3 *mtu);
+int mtu3_device_enable(struct mtu3 *mtu);
 int ssusb_check_clocks(struct ssusb_mtk *ssusb, u32 ex_clks);
+void ssusb_set_force_vbus(struct ssusb_mtk *ssusb, bool vbus_on);
+int ssusb_phy_power_on(struct ssusb_mtk *ssusb);
+void ssusb_phy_power_off(struct ssusb_mtk *ssusb);
+int ssusb_clks_enable(struct ssusb_mtk *ssusb, bool pm_control);
+void ssusb_clks_disable(struct ssusb_mtk *ssusb, bool pm_control);
+void ssusb_ip_sw_reset(struct ssusb_mtk *ssusb);
 struct usb_request *mtu3_alloc_request(struct usb_ep *ep, gfp_t gfp_flags);
 void mtu3_free_request(struct usb_ep *ep, struct usb_request *req);
 void mtu3_req_complete(struct mtu3_ep *mep,
@@ -433,6 +474,7 @@ void mtu3_ep0_setup(struct mtu3 *mtu);
 void mtu3_start(struct mtu3 *mtu);
 void mtu3_stop(struct mtu3 *mtu);
 void mtu3_dev_on_off(struct mtu3 *mtu, int is_on);
+void mtu3_nuke_all_ep(struct mtu3 *mtu);
 
 int mtu3_gadget_setup(struct mtu3 *mtu);
 void mtu3_gadget_cleanup(struct mtu3 *mtu);

@@ -18,6 +18,27 @@
 #include "mtu3_dr.h"
 #include "mtu3_debug.h"
 
+void ssusb_set_force_vbus(struct ssusb_mtk *ssusb, bool vbus_on)
+{
+	u32 u2ctl;
+	u32 misc;
+
+	if (!ssusb->force_vbus)
+		return;
+
+	u2ctl = mtu3_readl(ssusb->ippc_base, SSUSB_U2_CTRL(0));
+	misc = mtu3_readl(ssusb->mac_base, U3D_MISC_CTRL);
+	if (vbus_on) {
+		u2ctl &= ~SSUSB_U2_PORT_OTG_SEL;
+		misc |= VBUS_FRC_EN | VBUS_ON;
+	} else {
+		u2ctl |= SSUSB_U2_PORT_OTG_SEL;
+		misc &= ~(VBUS_FRC_EN | VBUS_ON);
+	}
+	mtu3_writel(ssusb->ippc_base, SSUSB_U2_CTRL(0), u2ctl);
+	mtu3_writel(ssusb->mac_base, U3D_MISC_CTRL, misc);
+}
+
 /* u2-port0 should be powered on and enabled; */
 int ssusb_check_clocks(struct ssusb_mtk *ssusb, u32 ex_clks)
 {
@@ -31,7 +52,9 @@ int ssusb_check_clocks(struct ssusb_mtk *ssusb, u32 ex_clks)
 	ret = readl_poll_timeout(ibase + U3D_SSUSB_IP_PW_STS1, value,
 			(check_val == (value & check_val)), 100, 20000);
 	if (ret) {
-		dev_err(ssusb->dev, "clks of sts1 are not stable!\n");
+		dev_err(ssusb->dev,
+		"clks of sts1 are not stable, check_val:0x%08x, value:0x%08x!\n",
+			check_val, value);
 		return ret;
 	}
 
@@ -74,36 +97,57 @@ static int ssusb_phy_exit(struct ssusb_mtk *ssusb)
 	return 0;
 }
 
-static int ssusb_phy_power_on(struct ssusb_mtk *ssusb)
+int ssusb_phy_power_on(struct ssusb_mtk *ssusb)
 {
 	int i;
 	int ret;
+
+	if (ssusb->phy_on == true) {
+		dev_info(ssusb->dev, "phy already enabled\n");
+		return 0;
+	}
 
 	for (i = 0; i < ssusb->num_phys; i++) {
 		ret = phy_power_on(ssusb->phys[i]);
 		if (ret)
 			goto power_off_phy;
 	}
+	ssusb->phy_on = true;
+
 	return 0;
 
 power_off_phy:
 	for (; i > 0; i--)
 		phy_power_off(ssusb->phys[i - 1]);
+	ssusb->phy_on = false;
 
 	return ret;
 }
 
-static void ssusb_phy_power_off(struct ssusb_mtk *ssusb)
+void ssusb_phy_power_off(struct ssusb_mtk *ssusb)
 {
 	unsigned int i;
 
+	if (ssusb->phy_on == false) {
+		dev_info(ssusb->dev, "phy already disabled\n");
+		return;
+	}
+
 	for (i = 0; i < ssusb->num_phys; i++)
 		phy_power_off(ssusb->phys[i]);
+	ssusb->phy_on = false;
 }
 
-static int ssusb_clks_enable(struct ssusb_mtk *ssusb)
+int ssusb_clks_enable(struct ssusb_mtk *ssusb, bool pm_control)
 {
 	int ret;
+	if (ssusb->clk_on == true) {
+		dev_info(ssusb->dev, "clk already enabled\n");
+		return 0;
+	}
+
+	if (pm_control)
+		pm_runtime_get_sync(ssusb->dev);
 
 	ret = clk_prepare_enable(ssusb->sys_clk);
 	if (ret) {
@@ -129,6 +173,8 @@ static int ssusb_clks_enable(struct ssusb_mtk *ssusb)
 		goto dma_clk_err;
 	}
 
+	ssusb->clk_on = true;
+
 	return 0;
 
 dma_clk_err:
@@ -141,12 +187,19 @@ sys_clk_err:
 	return ret;
 }
 
-static void ssusb_clks_disable(struct ssusb_mtk *ssusb)
+void ssusb_clks_disable(struct ssusb_mtk *ssusb, bool pm_control)
 {
+	if (ssusb->clk_on == false) {
+		dev_info(ssusb->dev, "clk already disabled\n");
+		return;
+	}
 	clk_disable_unprepare(ssusb->dma_clk);
 	clk_disable_unprepare(ssusb->mcu_clk);
 	clk_disable_unprepare(ssusb->ref_clk);
 	clk_disable_unprepare(ssusb->sys_clk);
+	if (pm_control)
+		pm_runtime_put_sync(ssusb->dev);
+	ssusb->clk_on = false;
 }
 
 static int ssusb_rscs_init(struct ssusb_mtk *ssusb)
@@ -159,7 +212,7 @@ static int ssusb_rscs_init(struct ssusb_mtk *ssusb)
 		goto vusb33_err;
 	}
 
-	ret = ssusb_clks_enable(ssusb);
+	ret = ssusb_clks_enable(ssusb, true);
 	if (ret)
 		goto clks_err;
 
@@ -180,7 +233,7 @@ static int ssusb_rscs_init(struct ssusb_mtk *ssusb)
 phy_err:
 	ssusb_phy_exit(ssusb);
 phy_init_err:
-	ssusb_clks_disable(ssusb);
+	ssusb_clks_disable(ssusb, true);
 clks_err:
 	regulator_disable(ssusb->vusb33);
 vusb33_err:
@@ -189,13 +242,13 @@ vusb33_err:
 
 static void ssusb_rscs_exit(struct ssusb_mtk *ssusb)
 {
-	ssusb_clks_disable(ssusb);
+	ssusb_clks_disable(ssusb, true);
 	regulator_disable(ssusb->vusb33);
 	ssusb_phy_power_off(ssusb);
 	ssusb_phy_exit(ssusb);
 }
 
-static void ssusb_ip_sw_reset(struct ssusb_mtk *ssusb)
+void ssusb_ip_sw_reset(struct ssusb_mtk *ssusb)
 {
 	/* reset whole ip (xhci & u3d) */
 	mtu3_setbits(ssusb->ippc_base, U3D_SSUSB_IP_PW_CTRL0, SSUSB_IP_SW_RST);
@@ -208,7 +261,8 @@ static void ssusb_ip_sw_reset(struct ssusb_mtk *ssusb)
 	 * power down device ip, otherwise ip-sleep will fail when working as
 	 * host only mode
 	 */
-	mtu3_setbits(ssusb->ippc_base, U3D_SSUSB_IP_PW_CTRL2, SSUSB_IP_DEV_PDN);
+	mtu3_setbits(ssusb->ippc_base, U3D_SSUSB_IP_PW_CTRL2,
+			SSUSB_IP_DEV_PDN);
 }
 
 static int get_ssusb_rscs(struct platform_device *pdev, struct ssusb_mtk *ssusb)
@@ -267,6 +321,10 @@ static int get_ssusb_rscs(struct platform_device *pdev, struct ssusb_mtk *ssusb)
 	ssusb->ippc_base = devm_ioremap_resource(dev, res);
 	if (IS_ERR(ssusb->ippc_base))
 		return PTR_ERR(ssusb->ippc_base);
+
+	ssusb->force_vbus = of_property_read_bool(node, "mediatek,force-vbus");
+	ssusb->clk_mgr = of_property_read_bool(node, "mediatek,clk-mgr");
+	ssusb->keep_ao = of_property_read_bool(node, "mediatek,keep-host-on");
 
 	ssusb->dr_mode = usb_get_dr_mode(dev);
 	if (ssusb->dr_mode == USB_DR_MODE_UNKNOWN)
@@ -353,15 +411,16 @@ static int mtu3_probe(struct platform_device *pdev)
 	if (ret)
 		goto comm_init_err;
 
-	ssusb_ip_sw_reset(ssusb);
-
 	if (IS_ENABLED(CONFIG_USB_MTU3_HOST))
 		ssusb->dr_mode = USB_DR_MODE_HOST;
 	else if (IS_ENABLED(CONFIG_USB_MTU3_GADGET))
 		ssusb->dr_mode = USB_DR_MODE_PERIPHERAL;
 
+	ssusb_ip_sw_reset(ssusb);
+
 	/* default as host */
 	ssusb->is_host = !(ssusb->dr_mode == USB_DR_MODE_PERIPHERAL);
+
 
 	switch (ssusb->dr_mode) {
 	case USB_DR_MODE_PERIPHERAL:
@@ -385,10 +444,17 @@ static int mtu3_probe(struct platform_device *pdev)
 			goto comm_exit;
 		}
 
-		ret = ssusb_host_init(ssusb, node);
-		if (ret) {
-			dev_err(dev, "failed to initialize host\n");
-			goto gadget_exit;
+		if (ssusb->keep_ao) {
+			ret = ssusb_host_init(ssusb, node);
+			if (ret) {
+				dev_info(dev, "failed to initialize host\n");
+				goto gadget_exit;
+			}
+		}
+
+		if (!ssusb->keep_ao) {
+			ssusb_phy_power_off(ssusb);
+			ssusb_clks_disable(ssusb, true);
 		}
 
 		ret = ssusb_otg_switch_init(ssusb);
@@ -396,12 +462,18 @@ static int mtu3_probe(struct platform_device *pdev)
 			dev_err(dev, "failed to initialize switch\n");
 			goto host_exit;
 		}
+
 		break;
 	default:
 		dev_err(dev, "unsupported mode: %d\n", ssusb->dr_mode);
 		ret = -EINVAL;
 		goto comm_exit;
 	}
+
+	if (!ssusb->keep_ao)
+		pm_runtime_put_sync(dev);
+
+	ssusb->usb_lock = wakeup_source_register(NULL, "ssusb.wakelock");
 
 	return 0;
 
@@ -455,16 +527,14 @@ static int __maybe_unused mtu3_suspend(struct device *dev)
 {
 	struct ssusb_mtk *ssusb = dev_get_drvdata(dev);
 
-	dev_dbg(dev, "%s\n", __func__);
+	dev_info(dev, "host:%d,%s\n", ssusb->is_host, __func__);
 
-	/* REVISIT: disconnect it for only device mode? */
-	if (!ssusb->is_host)
-		return 0;
-
-	ssusb_host_disable(ssusb, true);
-	ssusb_phy_power_off(ssusb);
-	ssusb_clks_disable(ssusb);
-	ssusb_wakeup_set(ssusb, true);
+	if (ssusb->is_host || (ssusb->dr_mode == USB_DR_MODE_HOST)) {
+		ssusb_host_disable(ssusb, true);
+		ssusb_phy_power_off(ssusb);
+		ssusb_clks_disable(ssusb, false);
+		ssusb_wakeup_set(ssusb, true);
+	}
 
 	return 0;
 }
@@ -474,32 +544,71 @@ static int __maybe_unused mtu3_resume(struct device *dev)
 	struct ssusb_mtk *ssusb = dev_get_drvdata(dev);
 	int ret;
 
-	dev_dbg(dev, "%s\n", __func__);
+	if (ssusb->is_host || (ssusb->dr_mode == USB_DR_MODE_HOST)) {
+		ssusb_wakeup_set(ssusb, false);
+		ret = ssusb_clks_enable(ssusb, false);
+		if (ret)
+			goto clks_err;
 
-	if (!ssusb->is_host)
-		return 0;
+		ret = ssusb_phy_power_on(ssusb);
+		if (ret)
+			goto phy_err;
 
-	ssusb_wakeup_set(ssusb, false);
-	ret = ssusb_clks_enable(ssusb);
-	if (ret)
-		goto clks_err;
-
-	ret = ssusb_phy_power_on(ssusb);
-	if (ret)
-		goto phy_err;
-
-	ssusb_host_enable(ssusb);
+		ssusb_host_enable(ssusb);
+	}
 
 	return 0;
 
 phy_err:
-	ssusb_clks_disable(ssusb);
+	ssusb_clks_disable(ssusb, false);
 clks_err:
 	return ret;
 }
 
+static int __maybe_unused mtu3_runtime_suspend(struct device *dev)
+{
+	struct ssusb_mtk *ssusb = dev_get_drvdata(dev);
+	int ret = 0;
+
+	dev_info(ssusb->dev, "%s\n", __func__);
+	if (dev->power.runtime_status == RPM_SUSPENDED) {
+		dev_info(ssusb->dev, "%s: already suspend\n", __func__);
+		return 0;
+	}
+
+	ret = mtu3_suspend(ssusb->dev);
+	if (!ret) {
+		dev_info(ssusb->dev, "%s: successfully!\n", __func__);
+		dev->power.runtime_status = RPM_SUSPENDED;
+	}
+
+	return 0;
+}
+
+static int __maybe_unused mtu3_runtime_resume(struct device *dev)
+{
+	struct ssusb_mtk *ssusb = dev_get_drvdata(dev);
+	int ret = 0;
+
+	if (dev->power.runtime_status == RPM_ACTIVE) {
+		dev_info(ssusb->dev, "%s: already resume\n", __func__);
+		return 0;
+	}
+
+	ret = mtu3_resume(ssusb->dev);
+	if (!ret) {
+		dev_info(ssusb->dev, "%s: successfully!\n", __func__);
+		dev->power.runtime_status = RPM_ACTIVE;
+	}
+
+	return 0;
+}
+
 static const struct dev_pm_ops mtu3_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(mtu3_suspend, mtu3_resume)
+	SET_RUNTIME_PM_OPS(mtu3_runtime_suspend,
+			mtu3_runtime_resume,
+			NULL)
 };
 
 #define DEV_PM_OPS (IS_ENABLED(CONFIG_PM) ? &mtu3_pm_ops : NULL)
