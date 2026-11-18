@@ -11,6 +11,12 @@ config COMMON_CLK_MEDIATEK
 	---help---
 	  MediaTek SoCs' clock support.
 
+config COMMON_CLK_MEDIATEK_DISABLE_UNUSED
+	tristate "Disable Unused Clock For GKI Project"
+	depends on COMMON_CLK_MEDIATEK
+	help
+	 disabled unused clock support for GKI.
+
 config COMMON_CLK_MT2701
 	bool "Clock driver for MediaTek MT2701"
 	depends on (ARCH_MEDIATEK && ARM) || COMPILE_TEST
