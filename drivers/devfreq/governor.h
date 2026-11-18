@@ -65,6 +65,7 @@ extern int devfreq_add_governor(struct devfreq_governor *governor);
 extern int devfreq_remove_governor(struct devfreq_governor *governor);
 
 extern int devfreq_update_status(struct devfreq *devfreq, unsigned long freq);
+extern int devfreq_update_target(struct devfreq *devfreq, unsigned long freq);
 
 static inline int devfreq_update_stats(struct devfreq *df)
 {

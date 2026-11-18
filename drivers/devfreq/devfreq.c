@@ -99,6 +99,47 @@ static unsigned long find_available_max_freq(struct devfreq *devfreq)
 }
 
 /**
+ * get_freq_range() - Get the current freq range
+ * @devfreq:	the devfreq instance
+ * @min_freq:	the min frequency
+ * @max_freq:	the max frequency
+ *
+ * This takes into consideration all constraints.
+ */
+static void get_freq_range(struct devfreq *devfreq,
+			   unsigned long *min_freq,
+			   unsigned long *max_freq)
+{
+	unsigned long *freq_table = devfreq->profile->freq_table;
+
+	lockdep_assert_held(&devfreq->lock);
+
+	/*
+	 * Initialize minimum/maximum frequency from freq table.
+	 * The devfreq drivers can initialize this in either ascending or
+	 * descending order and devfreq core supports both.
+	 */
+	if (freq_table[0] < freq_table[devfreq->profile->max_state - 1]) {
+		*min_freq = freq_table[0];
+		*max_freq = freq_table[devfreq->profile->max_state - 1];
+	} else {
+		*min_freq = freq_table[devfreq->profile->max_state - 1];
+		*max_freq = freq_table[0];
+	}
+
+	/* Apply constraints from sysfs */
+	*min_freq = max(*min_freq, devfreq->min_freq);
+	*max_freq = min(*max_freq, devfreq->max_freq);
+
+	/* Apply constraints from OPP interface */
+	*min_freq = max(*min_freq, devfreq->scaling_min_freq);
+	*max_freq = min(*max_freq, devfreq->scaling_max_freq);
+
+	if (*min_freq > *max_freq)
+		*min_freq = *max_freq;
+}
+
+/**
  * devfreq_get_freq_level() - Lookup freq_table for the frequency
  * @devfreq:	the devfreq instance
  * @freq:	the target frequency
@@ -309,6 +350,14 @@ static int devfreq_set_target(struct devfreq *devfreq, unsigned long new_freq,
 		return err;
 	}
 
+	/*
+	 * Print devfreq_frequency trace information between DEVFREQ_PRECHANGE
+	 * and DEVFREQ_POSTCHANGE because for showing the correct frequency
+	 * change order of between devfreq device and passive devfreq device.
+	 */
+	if (trace_devfreq_frequency_enabled() && new_freq != cur_freq)
+		trace_devfreq_frequency(devfreq, new_freq, cur_freq);
+
 	freqs.new = new_freq;
 	devfreq_notify_transition(devfreq, &freqs, DEVFREQ_POSTCHANGE);
 
@@ -324,18 +373,19 @@ static int devfreq_set_target(struct devfreq *devfreq, unsigned long new_freq,
 	return err;
 }
 
-/* Load monitoring helper functions for governors use */
-
 /**
- * update_devfreq() - Reevaluate the device and configure frequency.
+ * devfreq_update_target() - Reevaluate the device and configure frequency
+ *			   on the final stage.
  * @devfreq:	the devfreq instance.
+ * @freq:	the new frequency of parent device. This argument
+ *		is only used for devfreq device using passive governor.
  *
- * Note: Lock devfreq->lock before calling update_devfreq
- *	 This function is exported for governors.
+ * Note: Lock devfreq->lock before calling devfreq_update_target. This function
+ *	 should be only used by both update_devfreq() and devfreq governors.
  */
-int update_devfreq(struct devfreq *devfreq)
+int devfreq_update_target(struct devfreq *devfreq, unsigned long freq)
 {
-	unsigned long freq, min_freq, max_freq;
+	unsigned long min_freq, max_freq;
 	int err = 0;
 	u32 flags = 0;
 
@@ -351,16 +401,7 @@ int update_devfreq(struct devfreq *devfreq)
 	err = devfreq->governor->get_target_freq(devfreq, &freq);
 	if (err)
 		return err;
-
-	/*
-	 * Adjust the frequency with user freq, QoS and available freq.
-	 *
-	 * List from the highest priority
-	 * max_freq
-	 * min_freq
-	 */
-	max_freq = min(devfreq->scaling_max_freq, devfreq->max_freq);
-	min_freq = max(devfreq->scaling_min_freq, devfreq->min_freq);
+	get_freq_range(devfreq, &min_freq, &max_freq);
 
 	if (freq < min_freq) {
 		freq = min_freq;
@@ -372,7 +413,21 @@ int update_devfreq(struct devfreq *devfreq)
 	}
 
 	return devfreq_set_target(devfreq, freq, flags);
+}
+EXPORT_SYMBOL(devfreq_update_target);
 
+/* Load monitoring helper functions for governors use */
+
+/**
+ * update_devfreq() - Reevaluate the device and configure frequency.
+ * @devfreq:	the devfreq instance.
+ *
+ * Note: Lock devfreq->lock before calling update_devfreq
+ *	 This function is exported for governors.
+ */
+int update_devfreq(struct devfreq *devfreq)
+{
+	return devfreq_update_target(devfreq, 0L);
 }
 EXPORT_SYMBOL(update_devfreq);
 
@@ -594,6 +649,9 @@ static void devfreq_dev_release(struct device *dev)
 	if (devfreq->profile->exit)
 		devfreq->profile->exit(devfreq->dev.parent);
 
+	if (devfreq->opp_table)
+		dev_pm_opp_put_opp_table(devfreq->opp_table);
+
 	mutex_destroy(&devfreq->lock);
 	srcu_cleanup_notifier_head(&devfreq->transition_notifier_list);
 	kfree(devfreq);
@@ -675,6 +733,10 @@ struct devfreq *devfreq_add_device(struct device *dev,
 	devfreq->max_freq = devfreq->scaling_max_freq;
 
 	devfreq->suspend_freq = dev_pm_opp_get_suspend_opp_freq(dev);
+	devfreq->opp_table = dev_pm_opp_get_opp_table(dev);
+	if (IS_ERR(devfreq->opp_table))
+		devfreq->opp_table = NULL;
+
 	atomic_set(&devfreq->suspend_count, 0);
 
 	dev_set_name(&devfreq->dev, "%s", dev_name(dev));
@@ -1298,36 +1360,24 @@ static ssize_t min_freq_store(struct device *dev, struct device_attribute *attr,
 		return -EINVAL;
 
 	mutex_lock(&df->lock);
-
-	if (value) {
-		if (value > df->max_freq) {
-			ret = -EINVAL;
-			goto unlock;
-		}
-	} else {
-		unsigned long *freq_table = df->profile->freq_table;
-
-		/* Get minimum frequency according to sorting order */
-		if (freq_table[0] < freq_table[df->profile->max_state - 1])
-			value = freq_table[0];
-		else
-			value = freq_table[df->profile->max_state - 1];
-	}
-
 	df->min_freq = value;
 	update_devfreq(df);
-	ret = count;
-unlock:
 	mutex_unlock(&df->lock);
-	return ret;
+
+	return count;
 }
 
 static ssize_t min_freq_show(struct device *dev, struct device_attribute *attr,
 			     char *buf)
 {
 	struct devfreq *df = to_devfreq(dev);
+	unsigned long min_freq, max_freq;
 
-	return sprintf(buf, "%lu\n", max(df->scaling_min_freq, df->min_freq));
+	mutex_lock(&df->lock);
+	get_freq_range(df, &min_freq, &max_freq);
+	mutex_unlock(&df->lock);
+
+	return sprintf(buf, "%lu\n", min_freq);
 }
 
 static ssize_t max_freq_store(struct device *dev, struct device_attribute *attr,
@@ -1343,27 +1393,14 @@ static ssize_t max_freq_store(struct device *dev, struct device_attribute *attr,
 
 	mutex_lock(&df->lock);
 
-	if (value) {
-		if (value < df->min_freq) {
-			ret = -EINVAL;
-			goto unlock;
-		}
-	} else {
-		unsigned long *freq_table = df->profile->freq_table;
-
-		/* Get maximum frequency according to sorting order */
-		if (freq_table[0] < freq_table[df->profile->max_state - 1])
-			value = freq_table[df->profile->max_state - 1];
-		else
-			value = freq_table[0];
-	}
+	if (!value)
+		value = ULONG_MAX;
 
 	df->max_freq = value;
 	update_devfreq(df);
-	ret = count;
-unlock:
 	mutex_unlock(&df->lock);
-	return ret;
+
+	return count;
 }
 static DEVICE_ATTR_RW(min_freq);
 
@@ -1371,8 +1408,13 @@ static ssize_t max_freq_show(struct device *dev, struct device_attribute *attr,
 			     char *buf)
 {
 	struct devfreq *df = to_devfreq(dev);
+	unsigned long min_freq, max_freq;
 
-	return sprintf(buf, "%lu\n", min(df->scaling_max_freq, df->max_freq));
+	mutex_lock(&df->lock);
+	get_freq_range(df, &min_freq, &max_freq);
+	mutex_unlock(&df->lock);
+
+	return sprintf(buf, "%lu\n", max_freq);
 }
 static DEVICE_ATTR_RW(max_freq);
 
@@ -1450,6 +1492,40 @@ static ssize_t trans_stat_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(trans_stat);
 
+static ssize_t load_show(struct device *dev, struct device_attribute *attr,
+			 char *buf)
+{
+	int err;
+	struct devfreq *devfreq = to_devfreq(dev);
+	struct devfreq_dev_status stat = devfreq->last_status;
+	unsigned long freq;
+	ssize_t len;
+
+	err = devfreq_update_stats(devfreq);
+	if (err)
+		return err;
+
+	if (stat.total_time < stat.busy_time) {
+		err = devfreq_update_stats(devfreq);
+		if (err)
+			return err;
+	};
+
+	if (!stat.total_time)
+		return 0;
+
+	len = sprintf(buf, "%lu", stat.busy_time * 100 / stat.total_time);
+
+	if (devfreq->profile->get_cur_freq &&
+	    !devfreq->profile->get_cur_freq(devfreq->dev.parent, &freq))
+		len += sprintf(buf + len, "@%luHz\n", freq);
+	else
+		len += sprintf(buf + len, "@%luHz\n", devfreq->previous_freq);
+
+	return len;
+}
+static DEVICE_ATTR_RO(load);
+
 static struct attribute *devfreq_attrs[] = {
 	&dev_attr_name.attr,
 	&dev_attr_governor.attr,
@@ -1461,6 +1537,7 @@ static struct attribute *devfreq_attrs[] = {
 	&dev_attr_min_freq.attr,
 	&dev_attr_max_freq.attr,
 	&dev_attr_trans_stat.attr,
+	&dev_attr_load.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(devfreq);
