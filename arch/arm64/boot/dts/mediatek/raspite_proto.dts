@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Copyright (c) 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include "raspite.dtsi"
+
+&chosen {
+	version = "proto";
+};
+
+&pio {
+	ovp_en0: ovp_en0 {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO51__FUNC_GPIO51>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+
+	ovp_en1: ovp_en1 {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO51__FUNC_GPIO51>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+};

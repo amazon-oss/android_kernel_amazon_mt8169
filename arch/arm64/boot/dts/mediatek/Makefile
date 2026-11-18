@@ -11,6 +11,12 @@ dtb-$(CONFIG_ARCH_MEDIATEK) += mt8169-raspite.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-evb.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt8183-evb.dtb
 
+dtbo-$(CONFIG_ARCH_MEDIATEK) += raspite_proto.dtbo
+dtbo-$(CONFIG_ARCH_MEDIATEK) += raspite_proto_wpc.dtbo
+dtbo-$(CONFIG_ARCH_MEDIATEK) += raspite_hvt.dtbo
+dtbo-$(CONFIG_ARCH_MEDIATEK) += raspite_hvt_wpc.dtbo
+dtbo-$(CONFIG_ARCH_MEDIATEK) += raspite_evt.dtbo
+dtbo-$(CONFIG_ARCH_MEDIATEK) += raspite_evt_wpc.dtbo
 dtbo-$(CONFIG_ARCH_MEDIATEK) += tungsten_proto.dtbo
 dtbo-$(CONFIG_ARCH_MEDIATEK) += tungsten_hvt.dtbo
 dtbo-$(CONFIG_ARCH_MEDIATEK) += tungsten_evt.dtbo

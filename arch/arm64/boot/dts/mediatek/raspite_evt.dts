@@ -1,0 +1,130 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Copyright (c) 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ */
+
+/dts-v1/;
+/plugin/;
+
+#define RASPITE_EVT
+#include "raspite.dtsi"
+
+&chosen {
+	version = "evt";
+};
+
+&i2c2 {
+	max20342@35 {
+		pinctrl-names = "mosctrl1_init", "mosctrl1_low", "mosctrl1_high",
+		                "mosctrl2_init", "mosctrl2_low", "mosctrl2_high";
+		pinctrl-0 = <&mos_ctrl1_init>;
+		pinctrl-1 = <&mos_ctrl1_low>;
+		pinctrl-2 = <&mos_ctrl1_high>;
+		pinctrl-3 = <&mos_ctrl2_init>;
+		pinctrl-4 = <&mos_ctrl2_low>;
+		pinctrl-5 = <&mos_ctrl2_high>;
+	};
+};
+
+&pio {
+	mos_ctrl1_init: mosctrl1_init {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO41__FUNC_GPIO41>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+
+	mos_ctrl1_low: mosctrl1_low {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO41__FUNC_GPIO41>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+
+	mos_ctrl1_high: mosctrl1_high {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO41__FUNC_GPIO41>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+
+	mos_ctrl2_init: mosctrl2_init {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO43__FUNC_GPIO43>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+
+	mos_ctrl2_low: mosctrl2_low {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO43__FUNC_GPIO43>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+
+	mos_ctrl2_high: mosctrl2_high {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO43__FUNC_GPIO43>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+};
+
+&i2c9 {
+	aw87xxx_pa@58 {
+		compatible = "awinic,aw87xxx_pa";
+		spk-kpa-5v-en-gpios = <&pio 57 GPIO_ACTIVE_HIGH>;
+		reg = <0x58>;
+		dev_index = <0>;
+		status = "okay";
+	};
+
+	aw87xxx_pa@59 {
+		compatible = "awinic,aw87xxx_pa";
+		spk-kpa-5v-en-gpios = <&pio 57 GPIO_ACTIVE_HIGH>;
+		reg = <0x59>;
+		dev_index = <1>;
+		status = "okay";
+	};
+};
+
+&consys {
+	status = "okay";
+};
+
+&sound {
+	d_class_pa_codec_gain_l = <4>;
+	d_class_pa_codec_gain_r = <4>;
+	k_class_pa_codec_gain_l = <3>;
+	k_class_pa_codec_gain_r = <3>;
+	board_id0 = <&pio 65 GPIO_ACTIVE_HIGH>;
+	board_id1 = <&pio 66 GPIO_ACTIVE_HIGH>;
+	board_id2 = <&pio 60 GPIO_ACTIVE_HIGH>;
+	dc_detection_support;
+	dc_det_irq_num = <1>;
+	dc_det-gpio = <&pio 96 GPIO_ACTIVE_HIGH>;
+	dc_gpio-names = "dc_det-gpio";
+	dc_irq-names = "dc_det_irq";
+	dc_det_debounce_count_max = <3>;
+	dc_det_debounce_interval_time_ms = <30>;
+	dc_det_disable_pa_threshold = <3>;
+	dc_det_vsim2-supply = <&mt_pmic_vsim2_ldo_reg>;
+};
+
+&charger {
+	wireless_5w_charger_input_current = <1050000>;
+	wireless_5w_charger_current = <1200000>;
+	wireless_10w_charger_input_current = <1200000>;
+	wireless_10w_charger_current = <2400000>;
+	adapter_5w_iusb_lim = <1100000>;
+	adapter_7p5w_iusb_lim = <1650000>;
+	adapter_9w_iusb_lim = <1950000>;
+	adapter_12w_iusb_lim = <2650000>;
+	adapter_15w_iusb_lim = <3150000>;
+};
