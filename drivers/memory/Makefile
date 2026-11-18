@@ -3,6 +3,8 @@
 # Makefile for memory devices
 #
 
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/iommu
+
 obj-$(CONFIG_DDR)		+= jedec_ddr_data.o
 ifeq ($(CONFIG_DDR),y)
 obj-$(CONFIG_OF)		+= of_memory.o
