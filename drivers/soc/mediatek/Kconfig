@@ -115,6 +115,16 @@ config MTK_SCPSYS_PM_DOMAINS_DISABLE_UNUSED
 	  standard disable unused flow is not work. so use reference
 	  count in runtime pm to support it.
 
+config MTK_SVS
+	tristate "MediaTek Smart Voltage Scaling(SVS)"
+	depends on NVMEM
+	help
+	  The Smart Voltage Scaling(SVS) engine is a piece of hardware
+	  which has several controllers(banks) for calculating suitable
+	  voltage to different power domains(CPU/GPU/CCI) according to
+	  chip process corner, temperatures and other factors. Then DVFS
+	  driver could apply SVS bank voltage to PMIC/Buck.
+
 source "drivers/soc/mediatek/devmpu/Kconfig"
 
 endmenu
