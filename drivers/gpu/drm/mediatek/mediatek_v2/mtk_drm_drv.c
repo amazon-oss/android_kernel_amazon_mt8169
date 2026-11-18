@@ -2424,8 +2424,9 @@ int mtk_drm_primary_get_info(struct drm_device *dev,
 	unsigned int vramsize = 0, fps = 0;
 	phys_addr_t fb_base = 0;
 	struct mtk_drm_private *private = dev->dev_private;
+	struct drm_crtc *crtc = private->crtc[0];
 	struct mtk_panel_params *params =
-		mtk_drm_get_lcm_ext_params(private->crtc[0]);
+		mtk_drm_get_lcm_ext_params(crtc);
 
 	if (params) {
 		info->physicalWidthUm = params->physical_width_um;
@@ -2433,7 +2434,18 @@ int mtk_drm_primary_get_info(struct drm_device *dev,
 	} else
 		DDPPR_ERR("Cannot get lcm_ext_params\n");
 
-	info->vsyncFPS = lcm_fps_ctx_get(0);
+	info->vsyncFPS = 0;
+	if (crtc && crtc->mode.clock)
+		info->vsyncFPS = drm_mode_vrefresh(&crtc->mode) * 100;
+	if (!info->vsyncFPS && crtc) {
+		struct drm_display_mode *mode =
+			mtk_drm_crtc_avail_disp_mode(crtc, 0);
+
+		if (mode)
+			info->vsyncFPS = drm_mode_vrefresh(mode) * 100;
+	}
+	if (!info->vsyncFPS)
+		info->vsyncFPS = lcm_fps_ctx_get(0);
 	if (!info->vsyncFPS) {
 		_parse_tag_videolfb(&vramsize, &fb_base, &fps);
 		info->vsyncFPS = fps;
