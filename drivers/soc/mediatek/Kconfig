@@ -25,6 +25,14 @@ config MTK_INFRACFG
 	  INFRACFG controller contains various infrastructure registers not
 	  directly associated to any device.
 
+config MTK_MBOX
+	tristate "MediaTek Mbox Support"
+	help
+	  Say yes here to add support for the MediaTek Mbox driver.
+	  MTK MBOX is a physical H/W which consists of configurable 128
+	  or 256 bytes SRAM and 32 bit irq. The driver does read/write
+	  SRAM and IRQ handling.
+
 config MTK_PMIC_WRAP
 	tristate "MediaTek PMIC Wrapper Support"
 	depends on RESET_CONTROLLER
