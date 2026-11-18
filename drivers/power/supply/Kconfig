@@ -711,4 +711,22 @@ config CHARGER_WILCO
 	  information can be found in
 	  Documentation/ABI/testing/sysfs-class-power-wilco
 
+config BATTERY_MT6357
+	tristate "MT6357 fuel gauge support"
+	depends on MFD_MT6397
+	depends on NET
+	help
+	  Say Y to enable support for MT6357 battery driver.
+	  it measure battery current and temperature to provide
+	  battery information , It issues interrupt when trigger
+	  threshold is met.
+
+config MTK_USE_AGING_ZCV
+	bool "MediaTek Switch ZCV table"
+	default n
+	help
+	  Say Y to enable
+	  Allow it to change to another ZCV table when battery aging
+	  Need to cooperate with GM30
+
 endif # POWER_SUPPLY
