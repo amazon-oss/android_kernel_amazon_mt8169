@@ -83,4 +83,6 @@ config MTK_SCPSYS_PM_DOMAINS_DISABLE_UNUSED
 	  standard disable unused flow is not work. so use reference
 	  count in runtime pm to support it.
 
+source "drivers/soc/mediatek/devmpu/Kconfig"
+
 endmenu
