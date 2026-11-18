@@ -1639,7 +1639,7 @@ static void mt_fix_const_fields(struct hid_device *hdev, unsigned int usage)
 	}
 }
 
-static void mt_release_contacts(struct hid_device *hid)
+void mt_release_contacts(struct hid_device *hid)
 {
 	struct hid_input *hidinput;
 	struct mt_application *application;
@@ -1666,6 +1666,7 @@ static void mt_release_contacts(struct hid_device *hid)
 		application->num_received = 0;
 	}
 }
+EXPORT_SYMBOL_GPL(mt_release_contacts);
 
 static void mt_expired_timeout(struct timer_list *t)
 {
