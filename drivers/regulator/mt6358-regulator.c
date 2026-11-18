@@ -503,6 +503,24 @@ static struct mt6358_regulator_info mt6358_regulators[] = {
 		    MT6358_LDO_VSRAM_CON1, 0x7f),
 };
 
+/* MT6366 is a MT6358 variant without the camera LDOs */
+static bool mt6358_regulator_is_absent(u16 chip_id, int id)
+{
+	if (chip_id != MT6366_CHIP_ID)
+		return false;
+
+	switch (id) {
+	case MT6358_ID_VCAMA1:
+	case MT6358_ID_VCAMA2:
+	case MT6358_ID_VCAMD:
+	case MT6358_ID_VCAMIO:
+	case MT6358_ID_VLDO28:
+		return true;
+	default:
+		return false;
+	}
+}
+
 static int mt6358_regulator_probe(struct platform_device *pdev)
 {
 	struct mt6397_chip *mt6397 = dev_get_drvdata(pdev->dev.parent);
@@ -511,6 +529,9 @@ static int mt6358_regulator_probe(struct platform_device *pdev)
 	int i;
 
 	for (i = 0; i < MT6358_MAX_REGULATOR; i++) {
+		if (mt6358_regulator_is_absent(mt6397->chip_id, i))
+			continue;
+
 		config.dev = &pdev->dev;
 		config.driver_data = &mt6358_regulators[i];
 		config.regmap = mt6397->regmap;
