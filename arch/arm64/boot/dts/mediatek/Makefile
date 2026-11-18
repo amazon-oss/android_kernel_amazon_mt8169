@@ -10,4 +10,14 @@ dtb-$(CONFIG_ARCH_MEDIATEK) += mt8169.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-evb.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt8183-evb.dtb
 
+dtbo-$(CONFIG_ARCH_MEDIATEK) += tungsten_proto.dtbo
+dtbo-$(CONFIG_ARCH_MEDIATEK) += tungsten_hvt.dtbo
+dtbo-$(CONFIG_ARCH_MEDIATEK) += tungsten_evt.dtbo
+dtbo-$(CONFIG_ARCH_MEDIATEK) += tungsten_dvt.dtbo
+
 DTC_FLAGS += -@
+
+extra-y += $(dtbo-y)
+
+$(obj)/%.dtbo: $(src)/%.dts $(DTC) FORCE
+	$(call if_changed_dep,dtc,dtb)

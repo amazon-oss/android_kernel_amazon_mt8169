@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Copyright (c) 2023 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include "tungsten.dtsi"
+
+&chosen {
+	version = "dvt";
+};
+
+&charger {
+	adapter_5w_iusb_lim = <1100000>;
+	adapter_9w_iusb_lim = <2000000>;
+	adapter_12w_iusb_lim = <2650000>;
+	adapter_15w_iusb_lim = <3250000>;
+};
