@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Copyright (c) 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ */
+
+/dts-v1/;
+
+#include "mt8169.dtsi"
+
+&reserved_memory {
+	secure_disp_reserved_memory: secure-disp-reserved-memory {
+		compatible = "shared-dma-pool";
+		reusable;
+	};
+};
+
+&{/mtee} {
+	disp-memory-region = <&secure_disp_reserved_memory>;
+};
