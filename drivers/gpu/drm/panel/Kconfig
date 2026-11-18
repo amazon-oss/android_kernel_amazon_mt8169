@@ -419,4 +419,16 @@ config DRM_PANEL_FT8205_WUXGA_DSI_VDO_TUNGSTEN
 	  24-bits RGB per pixel. It provides a MIPI DSI interface
 	  to host.
 
+config DRM_PANEL_NT36523N_WUXGA_DSI_VDO_TUNGSTEN
+	tristate "DRM_PANEL_NT36523N_WUXGA_DSI_VDO_TUNGSTEN panel"
+	depends on OF
+	depends on DRM_MIPI_DSI
+	depends on BACKLIGHT_CLASS_DEVICE
+	depends on DRM_PANEL_BIAS_SUPPORT
+	help
+	  Say Y here if you want to enable support for boe nt36523n
+	  vdo mode panel. The panel has a 1200x1920 resolution and uses
+	  24-bits RGB per pixel. It provides a MIPI DSI interface
+	  to host.
+
 endmenu

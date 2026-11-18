@@ -44,3 +44,4 @@ obj-$(CONFIG_DRM_PANEL_ER88577B_WXGA_DSI_VDO_RASPITE) += panel-er88577b_wxga_dsi
 obj-$(CONFIG_DRM_PANEL_BIAS_SUPPORT) += panel_bias_i2c.o
 obj-$(CONFIG_DRM_PANEL_ILI9882T_WUXGA_DSI_VDO_TUNGSTEN) += panel-ili9882t_wuxga_dsi_vdo_tungsten.o
 obj-$(CONFIG_DRM_PANEL_FT8205_WUXGA_DSI_VDO_TUNGSTEN) += panel-ft8205_wuxga_dsi_vdo_tungsten.o
+obj-$(CONFIG_DRM_PANEL_NT36523N_WUXGA_DSI_VDO_TUNGSTEN) += panel-nt36523n_wuxga_dsi_vdo_tungsten.o
