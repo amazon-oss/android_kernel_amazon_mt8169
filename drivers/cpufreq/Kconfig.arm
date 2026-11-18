@@ -128,6 +128,16 @@ config ARM_MEDIATEK_CPUFREQ
 	help
 	  This adds the CPUFreq driver support for MediaTek SoCs.
 
+config AMAZON_TUNGSTEN_FREQ_SCALE
+	bool "CPU freq_scale update support for Amazon Tungsten"
+	depends on ARM_MEDIATEK_CPUFREQ
+	default n
+	help
+	  Support updating freq_scale after CPU frequency scaling in kernel
+	  v5.4 on Amazon Tungsten device only.
+	  The impact is making a drawdown for performance but improvement
+	  for power saving.
+
 config ARM_OMAP2PLUS_CPUFREQ
 	bool "TI OMAP2+"
 	depends on ARCH_OMAP2PLUS
