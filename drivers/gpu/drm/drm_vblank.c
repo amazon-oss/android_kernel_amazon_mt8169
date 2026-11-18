@@ -734,13 +734,14 @@ static bool
 drm_get_last_vbltimestamp(struct drm_device *dev, unsigned int pipe,
 			  ktime_t *tvblank, bool in_vblank_irq)
 {
+	struct drm_crtc *crtc = drm_crtc_from_index(dev, pipe);
 	bool ret = false;
 
 	/* Define requested maximum error on timestamps (nanoseconds). */
 	int max_error = (int) drm_timestamp_precision * 1000;
 
 	/* Query driver if possible and precision timestamping enabled. */
-	if (dev->driver->get_vblank_timestamp && (max_error > 0))
+	if (crtc && dev->driver->get_vblank_timestamp && (max_error > 0))
 		ret = dev->driver->get_vblank_timestamp(dev, pipe, &max_error,
 							tvblank, in_vblank_irq);
 

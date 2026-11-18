@@ -56,6 +56,7 @@ struct drm_crtc_crc {
 	bool opened, overflow;
 	struct drm_crtc_crc_entry *entries;
 	int head, tail;
+	int skip;
 	size_t values_cnt;
 	wait_queue_head_t wq;
 };

@@ -2067,6 +2067,35 @@ void drm_connector_set_vrr_capable_property(
 }
 EXPORT_SYMBOL(drm_connector_set_vrr_capable_property);
 
+int drm_connector_set_panel_orientation(
+	struct drm_connector *connector,
+	enum drm_panel_orientation panel_orientation)
+{
+	struct drm_device *dev = connector->dev;
+	struct drm_display_info *info = &connector->display_info;
+	struct drm_property *prop;
+
+	/* Already set? */
+	if (info->panel_orientation != DRM_MODE_PANEL_ORIENTATION_UNKNOWN)
+		return 0;
+
+	/* Don't attach the property if the orientation is unknown */
+	if (panel_orientation == DRM_MODE_PANEL_ORIENTATION_UNKNOWN)
+		return 0;
+
+	info->panel_orientation = panel_orientation;
+	prop = dev->mode_config.panel_orientation_property;
+
+	if (WARN_ON(!prop))
+		return -EINVAL;
+
+	drm_object_property_set_value(&connector->base, prop,
+				      info->panel_orientation);
+
+	return 0;
+}
+EXPORT_SYMBOL(drm_connector_set_panel_orientation);
+
 /**
  * drm_connector_init_panel_orientation_property -
  *	initialize the connecters panel_orientation property
@@ -2157,6 +2186,7 @@ static struct drm_encoder *drm_connector_get_encoder(struct drm_connector *conne
 	 * protected by modeset locks, so check those first. */
 	if (connector->state)
 		return connector->state->best_encoder;
+
 	return connector->encoder;
 }
 

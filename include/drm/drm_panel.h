@@ -90,7 +90,8 @@ struct drm_panel_funcs {
 	 * Turn on panel and perform set up.
 	 */
 	int (*prepare)(struct drm_panel *panel);
-
+	int (*prepare_power)(struct drm_panel *panel);
+	int (*unprepare_power)(struct drm_panel *panel);
 	/**
 	 * @enable:
 	 *
@@ -176,6 +177,22 @@ struct drm_panel {
 	 */
 	struct blocking_notifier_head nh;
 };
+
+static inline int drm_panel_unprepare_power(struct drm_panel *panel)
+{
+	if (panel && panel->funcs && panel->funcs->unprepare_power)
+		return panel->funcs->unprepare_power(panel);
+
+	return panel ? -ENOSYS : -EINVAL;
+}
+
+static inline int drm_panel_prepare_power(struct drm_panel *panel)
+{
+	if (panel && panel->funcs && panel->funcs->prepare_power)
+		return panel->funcs->prepare_power(panel);
+
+	return panel ? -ENOSYS : -EINVAL;
+}
 
 void drm_panel_init(struct drm_panel *panel);
 

@@ -1472,18 +1472,19 @@ int drm_fb_helper_pan_display(struct fb_var_screeninfo *var,
 		return -EBUSY;
 
 	mutex_lock(&fb_helper->lock);
-	if (!drm_master_internal_acquire(dev)) {
-		ret = -EBUSY;
-		goto unlock;
-	}
-
+	/*
+	 * if (!drm_master_internal_acquire(dev)) {
+	 *	ret = -EBUSY;
+	 *	goto unlock;
+	 * }
+	 */
 	if (drm_drv_uses_atomic_modeset(dev))
 		ret = pan_display_atomic(var, info);
 	else
 		ret = pan_display_legacy(var, info);
 
-	drm_master_internal_release(dev);
-unlock:
+	/*drm_master_internal_release(dev);*/
+/* unlock: */
 	mutex_unlock(&fb_helper->lock);
 
 	return ret;
