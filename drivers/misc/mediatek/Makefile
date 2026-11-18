@@ -7,6 +7,7 @@ obj-$(CONFIG_MTK_BOOT) += boot/
 obj-$(CONFIG_MTK_QOS_FRAMEWORK) += qos/
 obj-$(CONFIG_MTK_TINYSYS_SSPM_SUPPORT) += sspm/
 obj-$(CONFIG_MTK_IOMMU_MISC) += iommu/
+obj-$(CONFIG_INTERCONNECT_MTK_EXTENSION) += mtk-interconnect/
 obj-$(CONFIG_MTK_DVFSRC_HELPER) += dvfsrc/
 obj-$(CONFIG_MTK_CM_MGR) += cm_mgr/
 obj-$(CONFIG_MTK_CLK_BUFFER) += clkbuf/
