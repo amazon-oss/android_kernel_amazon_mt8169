@@ -9,6 +9,7 @@ obj-$(CONFIG_MTK_TINYSYS_SSPM_SUPPORT) += sspm/
 obj-$(CONFIG_MTK_CMDQ_MBOX_EXT) += cmdq/
 obj-$(CONFIG_MTK_IOMMU_MISC) += iommu/
 obj-$(CONFIG_INTERCONNECT_MTK_EXTENSION) += mtk-interconnect/
+obj-$(CONFIG_RT_REGMAP) += rt-regmap/
 obj-$(CONFIG_MTK_MDP) += mdp/
 obj-$(CONFIG_MTK_DVFSRC_HELPER) += dvfsrc/
 obj-$(CONFIG_MTK_CM_MGR) += cm_mgr/

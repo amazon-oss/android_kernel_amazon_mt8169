@@ -10,6 +10,7 @@ endmenu # Power
 menu "SSPM"
 source "drivers/misc/mediatek/sspm/Kconfig"
 endmenu # SSPM
+
 menu "MultiMedia, Display, Camera"
 config MTK_SEC_VIDEO_PATH_SUPPORT
 	bool "Enable MTK Secure Video Path Support"
@@ -53,3 +54,6 @@ menu "Debug, log, trace"
 source "drivers/misc/mediatek/boot/Kconfig"
 endmenu # Debug
 
+menu "Other Peripherals"
+source "drivers/misc/mediatek/rt-regmap/Kconfig"
+endmenu # Other Peripheral
