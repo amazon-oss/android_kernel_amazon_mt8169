@@ -18,6 +18,7 @@
 #define TEE_NUM_DEVICES	32
 
 #define TEE_IOCTL_PARAM_SIZE(x) (size_mul(sizeof(struct tee_param), (x)))
+#define TEE_DEVLOG_(LEVEL)	dev_##LEVEL
 
 /*
  * Unprivileged devices in the lower half range and privileged devices in
@@ -717,7 +718,7 @@ struct tee_device *tee_device_alloc(const struct tee_desc *teedesc,
 {
 	struct tee_device *teedev;
 	void *ret;
-	int rc, max_id;
+	int rc;
 	int offs = 0;
 
 	if (!teedesc || !teedesc->name || !teedesc->ops ||
@@ -731,20 +732,16 @@ struct tee_device *tee_device_alloc(const struct tee_desc *teedesc,
 		goto err;
 	}
 
-	max_id = TEE_NUM_DEVICES / 2;
-
-	if (teedesc->flags & TEE_DESC_PRIVILEGED) {
+	if (teedesc->flags & TEE_DESC_PRIVILEGED)
 		offs = TEE_NUM_DEVICES / 2;
-		max_id = TEE_NUM_DEVICES;
-	}
 
 	spin_lock(&driver_lock);
-	teedev->id = find_next_zero_bit(dev_mask, max_id, offs);
-	if (teedev->id < max_id)
+	teedev->id = find_next_zero_bit(dev_mask, TEE_NUM_DEVICES, offs);
+	if (teedev->id < TEE_NUM_DEVICES)
 		set_bit(teedev->id, dev_mask);
 	spin_unlock(&driver_lock);
 
-	if (teedev->id >= max_id) {
+	if (teedev->id >= TEE_NUM_DEVICES) {
 		ret = ERR_PTR(-ENOMEM);
 		goto err;
 	}
@@ -1039,6 +1036,128 @@ int tee_client_invoke_func(struct tee_context *ctx,
 	return ctx->teedev->desc->ops->invoke_func(ctx, arg, param);
 }
 EXPORT_SYMBOL_GPL(tee_client_invoke_func);
+
+int tee_client_register_shm(struct tee_context *ctx,
+			    unsigned long addr,
+			    size_t length,
+			    int *id)
+{
+	struct tee_shm *shm;
+	int rc;
+	unsigned long start;
+	int ret;
+
+	if (!ctx->teedev->desc->ops->shm_register ||
+	    !ctx->teedev->desc->ops->shm_unregister) {
+		return -EOPNOTSUPP;
+	}
+
+	teedev_ctx_get(ctx);
+
+	shm = kzalloc(sizeof(*shm), GFP_KERNEL);
+	if (!shm) {
+		ret = -ENOMEM;
+		goto err;
+	}
+
+	refcount_set(&shm->refcount, 1);
+	shm->flags = TEE_SHM_REGISTER;
+	shm->teedev = ctx->teedev;
+	shm->ctx = ctx;
+	shm->id = -1;
+	start = rounddown(addr, PAGE_SIZE);
+	shm->offset = addr - start;
+	shm->size = length;
+	shm->num_pages = (roundup(addr + length, PAGE_SIZE) - start) /
+			 PAGE_SIZE;
+	shm->pages = kcalloc(shm->num_pages, sizeof(*shm->pages), GFP_KERNEL);
+	if (!shm->pages) {
+		ret = -ENOMEM;
+		goto err;
+	}
+
+	for (rc = 0; rc < shm->num_pages; rc++)
+		shm->pages[rc] = virt_to_page(start + PAGE_SIZE * rc);
+
+	mutex_lock(&ctx->teedev->mutex);
+	shm->id = idr_alloc(&ctx->teedev->idr, shm, 1, 0, GFP_KERNEL);
+	mutex_unlock(&ctx->teedev->mutex);
+
+	if (shm->id < 0) {
+		ret = shm->id;
+		goto err;
+	}
+
+	rc = ctx->teedev->desc->ops->shm_register(ctx, shm, shm->pages,
+					     shm->num_pages, start);
+	if (rc) {
+		ret = rc;
+		goto err;
+	}
+
+	mutex_lock(&ctx->teedev->mutex);
+	list_add_tail(&shm->link, &ctx->list_shm);
+	mutex_unlock(&ctx->teedev->mutex);
+
+	*id = shm->id;
+
+	return 0;
+err:
+	if (shm) {
+		if (shm->id >= 0) {
+			mutex_lock(&ctx->teedev->mutex);
+			idr_remove(&ctx->teedev->idr, shm->id);
+			mutex_unlock(&ctx->teedev->mutex);
+		}
+		kfree(shm->pages);
+	}
+	kfree(shm);
+	teedev_ctx_put(ctx);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(tee_client_register_shm);
+
+int tee_client_unregister_shm(struct tee_context *ctx, int id)
+{
+	struct tee_shm *shm;
+
+	if (!ctx->teedev->desc->ops->shm_register ||
+	    !ctx->teedev->desc->ops->shm_unregister) {
+		return -EOPNOTSUPP;
+	}
+
+	shm = tee_shm_get_from_id(ctx, id);
+
+	if (shm == NULL)
+		return -EINVAL;
+	if (ctx != shm->ctx || ctx->teedev != shm->teedev)
+		return -EINVAL;
+	if (shm->flags & TEE_SHM_POOL)
+		return -EINVAL;
+
+	mutex_lock(&ctx->teedev->mutex);
+	idr_remove(&ctx->teedev->idr, shm->id);
+	if (shm->ctx)
+		list_del(&shm->link);
+	mutex_unlock(&ctx->teedev->mutex);
+
+	if (shm->flags & TEE_SHM_REGISTER) {
+		int rc = ctx->teedev->desc->ops->shm_unregister(ctx, shm);
+
+		if (rc)
+			dev_err(ctx->teedev->dev.parent,
+				"unregister shm %p failed: %d", shm, rc);
+
+		kfree(shm->pages);
+	}
+
+	if (shm->ctx)
+		teedev_ctx_put(shm->ctx);
+
+	kfree(shm);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tee_client_unregister_shm);
 
 int tee_client_cancel_req(struct tee_context *ctx,
 			  struct tee_ioctl_cancel_arg *arg)
