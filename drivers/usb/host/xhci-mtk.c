@@ -14,6 +14,7 @@
 #include <linux/mfd/syscon.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/of_irq.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/regmap.h>
@@ -169,6 +170,9 @@ static int xhci_mtk_host_disable(struct xhci_hcd_mtk *mtk)
 		dev_err(mtk->dev, "ip sleep failed!!!\n");
 		return ret;
 	}
+
+	usleep_range(200, 250);
+
 	return 0;
 }
 
@@ -433,6 +437,45 @@ static int xhci_mtk_setup(struct usb_hcd *hcd)
 	return ret;
 }
 
+static int __maybe_unused xhci_mtk_resume(struct device *dev);
+
+static void xhci_wk_control_dwork(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct xhci_hcd_mtk *mtk =
+		container_of(dwork, struct xhci_hcd_mtk, wk_ctl_dwork);
+
+	dev_info(mtk->dev, "remote wakeup control work done\n");
+	if (mtk->runtime_support) {
+		pm_runtime_get_sync(mtk->dev);
+		pm_runtime_put_sync(mtk->dev);
+	}
+}
+
+static void xhci_pm_control_dwork(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct xhci_hcd_mtk *mtk =
+		container_of(dwork, struct xhci_hcd_mtk, pm_ctl_dwork);
+
+	disable_irq(mtk->wk_irq);
+	device_enable_async_suspend(mtk->dev);
+	pm_runtime_mark_last_busy(mtk->dev);
+	pm_runtime_put_autosuspend(mtk->dev);
+	dev_info(mtk->dev, "%s done\n", __func__);
+}
+
+static irqreturn_t xhci_mtk_runtime_wakeup(int irq, void *__data)
+{
+	struct xhci_hcd_mtk *mtk = __data;
+
+	dev_info(mtk->dev, "%s : remote IRQ!!!\n", __func__);
+	disable_irq_nosync(mtk->wk_irq);
+	schedule_delayed_work(&mtk->wk_ctl_dwork, 0);
+
+	return IRQ_HANDLED;
+}
+
 static int xhci_mtk_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -475,6 +518,9 @@ static int xhci_mtk_probe(struct platform_device *pdev)
 	/* optional property, ignore the error if it does not exist */
 	of_property_read_u32(node, "mediatek,u3p-dis-msk",
 			     &mtk->u3p_dis_msk);
+	mtk->runtime_support = of_property_read_bool(node, "mediatek,runtime-support");
+	/* keep ref_ck on when suspend on some platform */
+	mtk->keep_clk_on = of_property_read_bool(node, "mediatek,keep-clock-on");
 
 	ret = usb_wakeup_of_property_parse(mtk, node);
 	if (ret) {
@@ -482,9 +528,17 @@ static int xhci_mtk_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	pm_runtime_enable(dev);
-	pm_runtime_get_sync(dev);
-	device_enable_async_suspend(dev);
+	if (!mtk->runtime_support) {
+		pm_runtime_set_active(&pdev->dev);
+		pm_runtime_enable(dev);
+		pm_runtime_get_noresume(&pdev->dev);
+	} else {
+		dev_info(mtk->dev, "support runtime\n");
+		pm_runtime_set_active(dev);
+		pm_runtime_use_autosuspend(dev);
+		pm_runtime_set_autosuspend_delay(dev, 10 * 1000);
+		pm_runtime_enable(dev);
+	}
 
 	ret = xhci_mtk_ldos_enable(mtk);
 	if (ret)
@@ -498,6 +552,23 @@ static int xhci_mtk_probe(struct platform_device *pdev)
 	if (irq < 0) {
 		ret = irq;
 		goto disable_clk;
+	}
+
+	if (mtk->runtime_support) {
+		dev_info(mtk->dev, "enter runtime suspport flow!!!\n");
+		mtk->wk_irq = platform_get_irq(pdev, 1);
+		if (!mtk->wk_irq) {
+			ret = irq;
+			goto disable_clk;
+		}
+		ret = request_irq(mtk->wk_irq, &xhci_mtk_runtime_wakeup,
+				IRQF_TRIGGER_FALLING, "USB Runtime wakeup", mtk);
+		if (ret)
+			goto disable_clk;
+
+		INIT_DELAYED_WORK(&mtk->wk_ctl_dwork, xhci_wk_control_dwork);
+		INIT_DELAYED_WORK(&mtk->pm_ctl_dwork, xhci_pm_control_dwork);
+		dev_info(mtk->dev, "register wk irq done!!!\n");
 	}
 
 	/* Initialize dma_mask and coherent_dma_mask to 32-bits */
@@ -572,6 +643,9 @@ static int xhci_mtk_probe(struct platform_device *pdev)
 	if (ret)
 		goto dealloc_usb2_hcd;
 
+	if (mtk->runtime_support)
+		schedule_delayed_work(&mtk->pm_ctl_dwork, 0);
+
 	return 0;
 
 dealloc_usb2_hcd:
@@ -609,6 +683,10 @@ static int xhci_mtk_remove(struct platform_device *dev)
 	pm_runtime_put_noidle(&dev->dev);
 	pm_runtime_disable(&dev->dev);
 
+	xhci->xhc_state |= XHCI_STATE_REMOVING;
+	if (mtk->runtime_support)
+		free_irq(mtk->wk_irq, mtk);
+
 	usb_remove_hcd(shared_hcd);
 	xhci->shared_hcd = NULL;
 	device_init_wakeup(&dev->dev, false);
@@ -635,6 +713,7 @@ static int __maybe_unused xhci_mtk_suspend(struct device *dev)
 	struct xhci_hcd_mtk *mtk = dev_get_drvdata(dev);
 	struct usb_hcd *hcd = mtk->hcd;
 	struct xhci_hcd *xhci = hcd_to_xhci(hcd);
+	struct irq_desc *desc;
 
 	xhci_dbg(xhci, "%s: stop port polling\n", __func__);
 	clear_bit(HCD_FLAG_POLL_RH, &hcd->flags);
@@ -643,7 +722,13 @@ static int __maybe_unused xhci_mtk_suspend(struct device *dev)
 	del_timer_sync(&xhci->shared_hcd->rh_timer);
 
 	xhci_mtk_host_disable(mtk);
-	xhci_mtk_clks_disable(mtk);
+	if (!mtk->keep_clk_on)
+		xhci_mtk_clks_disable(mtk);
+	if (mtk->runtime_support) {
+		desc = irq_to_desc(mtk->wk_irq);
+		if (desc != NULL)
+			desc->irq_data.chip->irq_ack(&desc->irq_data);
+	}
 	usb_wakeup_set(mtk, true);
 	return 0;
 }
@@ -655,7 +740,8 @@ static int __maybe_unused xhci_mtk_resume(struct device *dev)
 	struct xhci_hcd *xhci = hcd_to_xhci(hcd);
 
 	usb_wakeup_set(mtk, false);
-	xhci_mtk_clks_enable(mtk);
+	if (!mtk->keep_clk_on)
+		xhci_mtk_clks_enable(mtk);
 	xhci_mtk_host_enable(mtk);
 
 	xhci_dbg(xhci, "%s: restart port polling\n", __func__);
@@ -666,8 +752,83 @@ static int __maybe_unused xhci_mtk_resume(struct device *dev)
 	return 0;
 }
 
+static int __maybe_unused xhci_mtk_runtime_suspend(struct device *dev)
+{
+	struct xhci_hcd_mtk *mtk = dev_get_drvdata(dev);
+	struct xhci_hcd *xhci = hcd_to_xhci(mtk->hcd);
+	int ret = 0;
+	struct device *parent;
+	struct device_driver *driver;
+
+	if (xhci->xhc_state)
+		return -ESHUTDOWN;
+
+	if (mtk->runtime_support) {
+		dev_info(mtk->dev, "%s\n", __func__);
+		xhci_mtk_suspend(mtk->dev);
+		if (!mtk->has_ippc) {
+			parent = dev->parent;
+			if (parent && parent->driver) {
+				dev_info(mtk->dev, "%s: parent pm callback\n", __func__);
+				driver = parent->driver;
+				ret = driver->pm->runtime_suspend(parent);
+				if (ret) {
+					dev_info(mtk->dev, "%s: parent pm fail!\n", __func__);
+					xhci_mtk_resume(mtk->dev);
+					return ret;
+				}
+			}
+		}
+		enable_irq(mtk->wk_irq);
+	}
+
+	return ret;
+}
+
+static int __maybe_unused xhci_mtk_runtime_resume(struct device *dev)
+{
+	int ret = 0;
+	struct xhci_hcd_mtk *mtk = dev_get_drvdata(dev);
+	struct xhci_hcd *xhci = hcd_to_xhci(mtk->hcd);
+	struct device *parent;
+	struct device_driver *driver;
+
+	if (xhci->xhc_state)
+		return -ESHUTDOWN;
+
+	if (mtk->runtime_support) {
+		dev_info(mtk->dev, "%s\n", __func__);
+		if (!mtk->has_ippc) {
+			parent = dev->parent;
+			if (parent && parent->driver) {
+				dev_info(mtk->dev, "%s: parent pm callback\n", __func__);
+				driver = parent->driver;
+				ret = driver->pm->runtime_resume(parent);
+				if (ret)
+					dev_info(mtk->dev, "%s: parent pm fail!\n", __func__);
+			}
+		}
+		xhci_mtk_resume(mtk->dev);
+	}
+
+	return ret;
+}
+
+static int __maybe_unused xhci_mtk_runtime_idle(struct device *dev)
+{
+	int ret = 0;
+	struct xhci_hcd_mtk *mtk = dev_get_drvdata(dev);
+
+	dev_info(mtk->dev, "%s\n", __func__);
+
+	return ret;
+}
+
 static const struct dev_pm_ops xhci_mtk_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(xhci_mtk_suspend, xhci_mtk_resume)
+	SET_RUNTIME_PM_OPS(xhci_mtk_runtime_suspend,
+					   xhci_mtk_runtime_resume,
+					   xhci_mtk_runtime_idle)
 };
 #define DEV_PM_OPS IS_ENABLED(CONFIG_PM) ? &xhci_mtk_pm_ops : NULL
 

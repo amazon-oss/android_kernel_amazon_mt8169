@@ -156,6 +156,11 @@ struct xhci_hcd_mtk {
 	struct regmap *uwk;
 	u32 uwk_reg_base;
 	u32 uwk_vers;
+	struct delayed_work wk_ctl_dwork;
+	struct delayed_work pm_ctl_dwork;
+	int wk_irq;
+	bool runtime_support;
+	bool keep_clk_on;
 };
 
 static inline struct xhci_hcd_mtk *hcd_to_mtk(struct usb_hcd *hcd)
