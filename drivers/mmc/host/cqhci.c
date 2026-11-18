@@ -18,6 +18,7 @@
 #include <linux/mmc/card.h>
 
 #include "cqhci.h"
+#include "cqhci-crypto.h"
 
 #define DCMD_SLOT 31
 #define NUM_SLOTS 32
@@ -258,6 +259,9 @@ static void __cqhci_enable(struct cqhci_host *cq_host)
 	if (cq_host->caps & CQHCI_TASK_DESC_SZ_128)
 		cqcfg |= CQHCI_TASK_DESC_SZ;
 
+	if (cqhci_crypto_enable(cq_host))
+		cqcfg |= CQHCI_CRYPTO_ENABLE;
+
 	cqhci_writel(cq_host, cqcfg, CQHCI_CFG);
 
 	cqhci_writel(cq_host, lower_32_bits(cq_host->desc_dma_base),
@@ -378,6 +382,9 @@ static void cqhci_off(struct mmc_host *mmc)
 		pr_err("%s: cqhci: CQE stuck on\n", mmc_hostname(mmc));
 	else
 		pr_debug("%s: cqhci: CQE off\n", mmc_hostname(mmc));
+
+	if (cq_host->ops->post_disable)
+		cq_host->ops->post_disable(mmc);
 
 	mmc->cqe_on = false;
 }
@@ -568,7 +575,7 @@ static int cqhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 {
 	int err = 0;
 	u64 data = 0;
-	u64 *task_desc = NULL;
+	__le64 *task_desc = NULL;
 	int tag = cqhci_tag(mrq);
 	struct cqhci_host *cq_host = mmc->cqe_private;
 	unsigned long flags;
@@ -583,6 +590,9 @@ static int cqhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 		__cqhci_enable(cq_host);
 
 	if (!mmc->cqe_on) {
+		if (cq_host->ops->pre_enable)
+			cq_host->ops->pre_enable(mmc);
+
 		cqhci_writel(cq_host, 0, CQHCI_CTL);
 		mmc->cqe_on = true;
 		pr_debug("%s: cqhci: CQE on\n", mmc_hostname(mmc));
@@ -598,6 +608,12 @@ static int cqhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 		task_desc = (__le64 __force *)get_desc(cq_host, tag);
 		cqhci_prep_task_desc(mrq, &data, 1);
 		*task_desc = cpu_to_le64(data);
+		err = cqhci_prep_crypto_desc(mrq, task_desc);
+		if (err) {
+			pr_debug("%s: cqhci: failed to setup crypto desc for tag %d\n",
+			       mmc_hostname(mmc), tag);
+			return err;
+		}
 		err = cqhci_prep_tran_desc(mrq, cq_host, tag);
 		if (err) {
 			pr_err("%s: cqhci: failed to setup tx desc: %d\n",
@@ -1057,6 +1073,7 @@ static void cqhci_recovery_finish(struct mmc_host *mmc)
 
 	cqhci_set_irqs(cq_host, CQHCI_IS_MASK);
 
+	cqhci_crypto_recovery_finish(cq_host);
 	pr_debug("%s: cqhci: recovery done\n", mmc_hostname(mmc));
 }
 
@@ -1137,6 +1154,12 @@ int cqhci_init(struct cqhci_host *cq_host, struct mmc_host *mmc,
 		err = -ENOMEM;
 		goto out_err;
 	}
+	err = cqhci_host_init_crypto(cq_host);
+	if (err) {
+		dev_info(mmc->parent, "CQHCI crypto initialization failed\n");
+		err = -EINVAL;
+		goto out_err;
+	}
 
 	spin_lock_init(&cq_host->lock);
 
@@ -1160,3 +1183,4 @@ EXPORT_SYMBOL(cqhci_init);
 MODULE_AUTHOR("Venkat Gopalakrishnan <venkatg@codeaurora.org>");
 MODULE_DESCRIPTION("Command Queue Host Controller Interface driver");
 MODULE_LICENSE("GPL v2");
+
