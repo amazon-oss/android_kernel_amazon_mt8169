@@ -487,6 +487,13 @@ config HISI_HIKEY_USB
 	help
 	  If you say yes here you get support for usb functionality of HiSilicon Hikey Platform.
 
+config IDME
+	tristate "IDME support"
+	depends on PROC_FS
+	help
+	  Select Y here to enable IDME support to read the data
+	  via userspace (i.e. /proc/idme/* entries)
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/mediatek/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
