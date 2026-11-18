@@ -19,6 +19,7 @@
 #define TEEC_ERROR_BAD_PARAMETERS	0xFFFF0006
 #define TEEC_ERROR_COMMUNICATION	0xFFFF000E
 #define TEEC_ERROR_OUT_OF_MEMORY	0xFFFF000C
+#define TEEC_ERROR_BUSY			0xFFFF000D
 #define TEEC_ERROR_SHORT_BUFFER		0xFFFF0010
 
 #define TEEC_ORIGIN_COMMS		0x00000002
@@ -122,6 +123,14 @@ struct optee_call_ctx {
 	size_t num_entries;
 };
 
+/* kree console log buffer */
+struct optee_kreeconsole_buf {
+	unsigned short size;
+	unsigned short write_pos;
+	unsigned short read_pos;
+	char buf[0];
+};
+
 void optee_handle_rpc(struct tee_context *ctx, struct optee_rpc_param *param,
 		      struct optee_call_ctx *call_ctx);
 void optee_rpc_finalize_call(struct optee_call_ctx *call_ctx);
@@ -176,8 +185,14 @@ void optee_free_pages_list(void *array, size_t num_entries);
 void optee_fill_pages_list(u64 *dst, struct page **pages, int num_pages,
 			   size_t page_offset);
 
+void handle_rpc_func_kree_clock_control(struct optee_msg_arg *arg);
+void optee_clkctrl_init(struct device_node *np);
+
 int optee_enumerate_devices(void);
 void optee_unregister_devices(void);
+
+int optee_kreeconsole_init(void);
+void handle_rpc_func_kree_console_flush(void);
 
 /*
  * Small helpers

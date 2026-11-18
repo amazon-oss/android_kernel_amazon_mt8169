@@ -650,6 +650,13 @@ static struct optee *optee_probe(struct device_node *np)
 
 	optee_enable_shm_cache(optee);
 
+#if IS_ENABLED(CONFIG_OPTEE_REE_CLK_CTRL)
+	optee_clkctrl_init(np);
+	rc = optee_kreeconsole_init();
+	if (rc)
+		goto err;
+#endif
+
 	if (optee->sec_caps & OPTEE_SMC_SEC_CAP_DYNAMIC_SHM)
 		pr_info("dynamic shared memory is enabled\n");
 
