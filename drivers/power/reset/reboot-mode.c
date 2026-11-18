@@ -45,6 +45,19 @@ static int reboot_mode_notify(struct notifier_block *this,
 	struct reboot_mode_driver *reboot;
 	unsigned int magic;
 
+#if IS_ENABLED(CONFIG_AMAZON_SIGN_OF_LIFE)
+	/* mark silent OTA flag */
+	if (cmd && (strstr(cmd, "quiescent"))) {
+		rtc_mark_quiescent(1);
+	} else {
+		rtc_mark_quiescent(0);
+	}
+#endif
+	if (cmd && (!strcmp(cmd, "recovery-update")
+			|| !strcmp(cmd, "recovery,quiescent")
+			|| !strcmp(cmd, "recovery-update,quiescent")))
+		cmd = "recovery";
+
 	reboot = container_of(this, struct reboot_mode_driver, reboot_notifier);
 	magic = get_reboot_mode_magic(reboot, cmd);
 	if (magic)
@@ -103,6 +116,11 @@ int reboot_mode_register(struct reboot_mode_driver *reboot)
 
 	reboot->reboot_notifier.notifier_call = reboot_mode_notify;
 	register_reboot_notifier(&reboot->reboot_notifier);
+
+#if IS_ENABLED(CONFIG_AMAZON_SIGN_OF_LIFE)
+	/* clear quiescent mode*/
+	rtc_mark_quiescent(0);
+#endif
 
 	return 0;
 
