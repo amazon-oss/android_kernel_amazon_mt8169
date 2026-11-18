@@ -488,6 +488,7 @@ config HISI_HIKEY_USB
 	  If you say yes here you get support for usb functionality of HiSilicon Hikey Platform.
 
 source "drivers/misc/c2port/Kconfig"
+source "drivers/misc/mediatek/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
 source "drivers/misc/ti-st/Kconfig"
