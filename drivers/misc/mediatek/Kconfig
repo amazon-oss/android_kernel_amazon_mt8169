@@ -64,6 +64,8 @@ config MTK_TEE_GP_SUPPORT
 	  enables TEE related modules to use GPAPIs. (depending on
 	  Trustonic TEE Support or Microtrust TEE Support or Google Trusty
 	  TEE or other 3rd-party TEE)
+
+source "drivers/misc/mediatek/mtee/Kconfig"
 endmenu # Security
 
 menu "Debug, log, trace"

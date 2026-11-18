@@ -10,6 +10,7 @@ obj-$(CONFIG_MTK_LEDS) += leds/
 obj-$(CONFIG_MFD_MT6370_PMU) += subpmic/
 obj-$(CONFIG_MTK_USB_TYPEC) += typec/
 obj-$(CONFIG_MTK_CMDQ_MBOX_EXT) += cmdq/
+obj-$(CONFIG_OPTEE) += mtee/
 obj-$(CONFIG_MTK_IOMMU_MISC) += iommu/
 obj-$(CONFIG_MTK_POWER_THROTTLING_COMMON) += power_throttling/
 obj-$(CONFIG_EXTCON_MTK_USB) += extcon/
