@@ -25,6 +25,16 @@ config AMAZON_POWEROFF_LOG
 	help
 	  enable Long press key power off log
 
+config AMAZON_INPUT_KEYCOMBO
+	tristate "Amazon key combo"
+	depends on INPUT
+	select INPUT_KEYCOMBO
+	help
+	  Say Y here if you want to panic kernel / power off when some keys are pressed;
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called amzn_keycombo.
+
 endif #if AMAZON
 
 endmenu
