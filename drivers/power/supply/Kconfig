@@ -739,4 +739,21 @@ config MTK_USE_AGING_ZCV
 	  Allow it to change to another ZCV table when battery aging
 	  Need to cooperate with GM30
 
+config MTK_CHARGER_TYPE_DETECT
+	tristate "Mediatek Charger Type Detect Driver"
+	depends on TCPC_CLASS
+	help
+	  Say Y here to enable Mediatek Charger Type Detect.
+	  Support enable charger type detect when receiving
+	  typec attach notify.
+	  Say N to disable.
+
+config MTK_CHARGER
+	tristate "MediaTek Charging Driver"
+	help
+	  Say yes here to enable MediaTek charging driver.
+	  This driver contains charging control flow and
+	  maintains charging status.
+	  Say no if not using MediaTek charging driver.
+
 endif # POWER_SUPPLY
