@@ -378,4 +378,15 @@ config DRM_PANEL_ILI9881C_WXGA_DSI_VDO_RASPITE
 	  24-bits RGB per pixel. It provides a MIPI DSI interface
 	  to host.
 
+config DRM_PANEL_ER88577B_WXGA_DSI_VDO_RASPITE
+	tristate "ER88577B WXGA RASPITE vdo mode panel"
+	depends on OF
+	depends on DRM_MIPI_DSI
+	depends on BACKLIGHT_CLASS_DEVICE
+	help
+	  Say Y here if you want to enable support for ER88577B
+	  vdo mode panel. The panel has a 800x1280 resolution and uses
+	  24-bits RGB per pixel. It provides a MIPI DSI interface
+	  to host.
+
 endmenu
