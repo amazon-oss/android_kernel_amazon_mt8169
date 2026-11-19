@@ -1471,6 +1471,22 @@ config SND_SOC_MT6358
 	  Enable support for the platform which uses MT6358 as
 	  external codec device.
 
+config ACCDET_OMTP_CTIA_SWITCH_MANUAL
+	bool "MediaTek ACCDET driver"
+	default n
+	help
+	  Switch IC - SD80 or FSA3157 - support for MediaTek SOC
+	  If you want to use MediaTek ACCDET PIN SWAP,
+	  say Y or N here.
+	  If unsure, say N.
+
+config SND_SOC_MT6358_ACCDET
+	tristate "MediaTek MT6358 ACCDET driver"
+	help
+	  ACCDET means Accessory Detection technology, MediaTek develop it
+	  for ASoC codec soc-jack detection mechanism.
+	  Select N if you don't have jack on board.
+
 config SND_SOC_MT6366
 	tristate "MediaTek MT6366 Codec driver"
 	help
