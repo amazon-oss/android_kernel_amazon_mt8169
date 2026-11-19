@@ -62,6 +62,11 @@ static DECLARE_SWAIT_QUEUE_HEAD(s2idle_wait_head);
 enum s2idle_states __read_mostly s2idle_state;
 static DEFINE_RAW_SPINLOCK(s2idle_lock);
 
+#if AMZN_MODIFICATION
+// Save if the device resumes from a suspend state in which all CPU have shut down.
+static bool resume_from_machine_suspend;
+#endif
+
 /**
  * pm_suspend_default_s2idle - Check if suspend-to-idle is the default suspend.
  *
@@ -348,6 +353,9 @@ static int suspend_prepare(suspend_state_t state)
 	if (!sleep_state_supported(state))
 		return -EPERM;
 
+#if AMZN_MODIFICATION
+	resume_from_machine_suspend = false;
+#endif
 	pm_prepare_console();
 
 	error = __pm_notifier_call_chain(PM_SUSPEND_PREPARE, -1, &nr_calls);
@@ -452,6 +460,11 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 			error = suspend_ops->enter(state);
 			trace_suspend_resume(TPS("machine_suspend"),
 				state, false);
+#if AMZN_MODIFICATION
+			if (!error)
+				resume_from_machine_suspend = true;
+#endif
+			pr_notice("[METRICS_RESUME] Device suspend exit\n");
 		} else if (*wakeup) {
 			error = -EBUSY;
 		}
@@ -635,3 +648,24 @@ int pm_suspend(suspend_state_t state)
 	return error;
 }
 EXPORT_SYMBOL(pm_suspend);
+
+#if AMZN_MODIFICATION
+/**
+ * pm_resume_from_machine_suspend - Externally visible function for query
+ * of whether a resume comes from a machine level suspend.
+ * Some device drivers or other kernel entities may want to do something if
+ * the system resumes from a non-aborted suspend (machine level suspend).
+ * Any kernel entities should use combination of this function and its resume
+ * callback to determine if the system resumes from machine level suspend.
+ * Fox example: if a device driver wants to know if the system resumes from
+ * machine level suspend, it should do either of them:
+ * 1. set a flag in its suspend callback, check the flag as well
+ *    as result of this function, then clear the flag.
+ * 2. check result of this function in its resume callback.
+ */
+bool pm_resume_from_machine_suspend(void)
+{
+	return resume_from_machine_suspend;
+}
+EXPORT_SYMBOL(pm_resume_from_machine_suspend);
+#endif
