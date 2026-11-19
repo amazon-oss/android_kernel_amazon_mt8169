@@ -4605,6 +4605,96 @@ int access_remote_vm(struct mm_struct *mm, unsigned long addr,
 	return __access_remote_vm(NULL, mm, addr, buf, len, gup_flags);
 }
 
+void conn_export_read_task_name(struct task_struct *task, char *pcName,
+	unsigned char name_size)
+{
+#define TASK_CMD_LINE_SIZE 128
+	char aucBuf[TASK_CMD_LINE_SIZE] = {0};
+	char *pucBuf = &aucBuf[0];
+	struct mm_struct *mm;
+	unsigned long count = TASK_CMD_LINE_SIZE - 1;
+	unsigned long arg_start, env_start, arg_end;
+	unsigned long arg_len, env_len;
+	unsigned long pos, len;
+	char env_exist;
+	unsigned char fgDone = 0;
+#define READ_VM() \
+	do {\
+		while (count > 0 && len > 0 && !fgDone) { \
+			unsigned int _count, l;\
+			int nr_read;\
+\
+			_count = min(count, len);\
+			nr_read = access_remote_vm(mm, pos, pucBuf, _count, 0);\
+			if (nr_read <= 0)\
+				break;\
+			l = strnlen(pucBuf, nr_read);\
+			if (l < nr_read) {\
+				nr_read = l;\
+				fgDone = 1;\
+			} \
+			pos += nr_read;\
+			len -= nr_read;\
+			pucBuf += nr_read;\
+			count -= nr_read;\
+		} \
+	} while (0)
+
+	mm = get_task_mm(task);
+	if (!mm || !mm->env_end)
+		goto use_comm;
+
+	down_read(&mm->mmap_sem);
+	arg_start = mm->arg_start;
+	arg_end = mm->arg_end;
+	arg_len = (arg_end >= arg_start) ? arg_end - arg_start : 0;
+	env_start = mm->env_start;
+	env_len = (mm->arg_end >= arg_start) ? mm->env_end - env_start : 0;
+	up_read(&mm->mmap_sem);
+
+	/* arg is empty */
+	if (!arg_len) {
+		pr_err("argv length is 0\n");
+		goto use_comm;
+	}
+	/* Read last byte of argv */
+	if (access_remote_vm(mm, arg_end - 1, &env_exist, 1, 0) <= 0)
+		goto use_comm;
+
+	/* Read argv */
+	pos = arg_start;
+	len = arg_len;
+	READ_VM();
+	/* Read Env args */
+	if (env_exist != '\0' && env_len > 0 && !fgDone) {
+		printk("read env\n");
+		pos = env_start;
+		len = env_len;
+		READ_VM();
+	}
+
+use_comm:
+	if (mm)
+		mmput(mm);
+
+	if (pucBuf != &aucBuf[0]) {
+		pucBuf = strchr(aucBuf, ' ');
+		if (pucBuf)
+			*pucBuf = '\0';
+		pucBuf = strrchr(aucBuf, '/');
+		if (!pucBuf)
+			pucBuf = &aucBuf[0];
+		else
+			pucBuf++;
+		strncpy(pcName, pucBuf, name_size);
+	} else {
+		printk("No cmdline, using comm %s, %d\n", task->comm,
+			aucBuf[0]);
+		strncpy(pcName, task->comm, name_size);
+	}
+}
+EXPORT_SYMBOL(conn_export_read_task_name);
+
 /*
  * Access another process' address space.
  * Source/target buffer must be kernel space,
