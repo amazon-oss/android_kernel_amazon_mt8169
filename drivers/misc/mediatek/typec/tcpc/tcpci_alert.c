@@ -498,6 +498,17 @@ static inline int tcpci_report_usb_port_attached(struct tcpc_device *tcpc)
 	typec_set_orientation(tcpc->typec_port, tcpc->typec_polarity ?
 			TYPEC_ORIENTATION_NORMAL : TYPEC_ORIENTATION_REVERSE);
 
+	if (!tcpc->typec_partner) {
+		struct typec_partner_desc desc = {
+			.accessory = TYPEC_ACCESSORY_NONE,
+		};
+
+		tcpc->typec_partner = typec_register_partner(tcpc->typec_port,
+							     &desc);
+		if (IS_ERR(tcpc->typec_partner))
+			tcpc->typec_partner = NULL;
+	}
+
 	tcpci_set_wake_lock_pd(tcpc, true);
 
 #if IS_ENABLED(CONFIG_USB_POWER_DELIVERY)
@@ -518,6 +529,11 @@ static inline int tcpci_report_usb_port_attached(struct tcpc_device *tcpc)
 static inline int tcpci_report_usb_port_detached(struct tcpc_device *tcpc)
 {
 	TCPC_INFO("usb_port_detached\r\n");
+
+	if (tcpc->typec_partner) {
+		typec_unregister_partner(tcpc->typec_partner);
+		tcpc->typec_partner = NULL;
+	}
 
 	tcpc->dual_role_pr = DUAL_ROLE_PROP_PR_NONE;
 	tcpc->dual_role_dr = DUAL_ROLE_PROP_DR_NONE;
