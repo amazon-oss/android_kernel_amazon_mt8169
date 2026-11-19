@@ -28,3 +28,4 @@ obj-$(CONFIG_MTK_BTIF) += btif/
 obj-$(CONFIG_MTK_CAM_TIMESYNC) += cam_timesync/
 obj-$(CONFIG_MTK_CAMERA_MEM_SUPPORT) += camera_mem/
 obj-$(CONFIG_MTK_CAMERA_ISP_SUPPORT) += cameraisp/
+obj-$(CONFIG_MTK_IMGSENSOR) += imgsensor/src/
