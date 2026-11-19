@@ -70,3 +70,12 @@ obj-$(CONFIG_COMMON_CLK_MT8183_VDECSYS) += clk-mt8183-vdec.o
 obj-$(CONFIG_COMMON_CLK_MT8183_VENCSYS) += clk-mt8183-venc.o
 obj-$(CONFIG_COMMON_CLK_MT8516) += clk-mt8516.o
 obj-$(CONFIG_COMMON_CLK_MT8516_AUDSYS) += clk-mt8516-aud.o
+obj-$(CONFIG_COMMON_CLK_MTK_FREQ_HOPPING) += fhctl.o
+fhctl-y += clk-fhctl.o
+fhctl-$(CONFIG_COMMON_CLK_MTK_FREQ_HOPPING_DEBUG) += clk-fhctl-debug.o
+ifneq ($(CONFIG_COMMON_CLK_MTK_FREQ_HOPPING_SUBSYS),y)
+fhctl-y += clk-fhctl-ap.o
+else
+fhctl-$(CONFIG_COMMON_CLK_MTK_FREQ_HOPPING_SSPM) += clk-fhctl-sspm.o
+fhctl-$(CONFIG_COMMON_CLK_MTK_FREQ_HOPPING_MCUPM) += clk-fhctl-mcupm.o
+endif
