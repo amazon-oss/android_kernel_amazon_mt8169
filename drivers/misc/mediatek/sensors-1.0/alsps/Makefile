@@ -4,5 +4,6 @@ obj-$(CONFIG_MTK_SENSOR_SUPPORT)   +=  alsps_common.o
 alsps_common-$(CONFIG_MTK_SENSOR_SUPPORT) := alsps.o alsps_factory.o aal_control.o
 
 obj-$(CONFIG_MTK_ALSPSHUB)      +=  alspshub/
+obj-$(CONFIG_MTK_LTR578)	+=  ltr578/
 #obj-$(CONFIG_MTK_CM36558)	+=  cm36558/
 #obj-$(CONFIG_MTK_LTR303)	+=  ltr303/
