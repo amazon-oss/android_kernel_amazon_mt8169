@@ -21,4 +21,5 @@ obj-$(CONFIG_MTK_MDP) += mdp/
 obj-$(CONFIG_MTK_DVFSRC_HELPER) += dvfsrc/
 obj-$(CONFIG_MTK_CM_MGR) += cm_mgr/
 obj-$(CONFIG_MTK_CLK_BUFFER) += clkbuf/
+obj-$(CONFIG_MTK_TRUSTED_MEMORY_SUBSYSTEM) += trusted_mem/
 obj-$(CONFIG_MTK_SENSOR_SUPPORT) += sensors-1.0/
