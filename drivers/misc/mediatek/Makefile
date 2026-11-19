@@ -23,3 +23,4 @@ obj-$(CONFIG_MTK_CM_MGR) += cm_mgr/
 obj-$(CONFIG_MTK_CLK_BUFFER) += clkbuf/
 obj-$(CONFIG_MTK_TRUSTED_MEMORY_SUBSYSTEM) += trusted_mem/
 obj-$(CONFIG_MTK_SENSOR_SUPPORT) += sensors-1.0/
+obj-$(CONFIG_MTK_BTIF) += btif/
