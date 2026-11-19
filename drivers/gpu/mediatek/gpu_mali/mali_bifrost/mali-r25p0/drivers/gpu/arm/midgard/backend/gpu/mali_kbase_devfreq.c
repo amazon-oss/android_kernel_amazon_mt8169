@@ -27,6 +27,7 @@
 #include <linux/of.h>
 #include <linux/clk.h>
 #include <linux/devfreq.h>
+#include <linux/module.h>
 #ifdef CONFIG_DEVFREQ_THERMAL
 #include <linux/devfreq_cooling.h>
 #endif
@@ -106,6 +107,15 @@ static int mtk_devfreq_gov_handler(struct devfreq *devfreq,
 	return ret;
 }
 
+
+static struct devfreq_simple_ondemand_data kbase_ondemand_data = {
+	.upthreshold = 60,
+	.downdifferential = 20,
+};
+module_param_named(devfreq_upthreshold, kbase_ondemand_data.upthreshold,
+		   uint, 0644);
+module_param_named(devfreq_downdifferential,
+		   kbase_ondemand_data.downdifferential, uint, 0644);
 
 static struct devfreq_governor mtk_devfreq_gov = {
 	.name = "ahlahuagua",
@@ -763,7 +773,7 @@ int kbase_devfreq_init(struct kbase_device *kbdev)
 	}
 
 	kbdev->devfreq = devfreq_add_device(kbdev->dev, dp,
-				"simple_ondemand", NULL);
+				"simple_ondemand", &kbase_ondemand_data);
 	if (IS_ERR(kbdev->devfreq)) {
 		err = PTR_ERR(kbdev->devfreq);
 		kbase_devfreq_work_term(kbdev);
