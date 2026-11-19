@@ -51,6 +51,7 @@ source "drivers/misc/mediatek/cmdq/Kconfig"
 source "drivers/misc/mediatek/mtk-interconnect/Kconfig"
 source "drivers/misc/mediatek/mmp/Kconfig"
 source "drivers/misc/mediatek/mdp/Kconfig"
+source "drivers/misc/mediatek/cam_timesync/Kconfig"
 endmenu # MultiMedia, Display, Camera
 
 menu "Security"

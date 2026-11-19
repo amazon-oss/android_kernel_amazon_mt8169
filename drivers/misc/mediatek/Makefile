@@ -25,3 +25,4 @@ obj-$(CONFIG_MTK_TRUSTED_MEMORY_SUBSYSTEM) += trusted_mem/
 obj-$(CONFIG_MTK_SENSOR_SUPPORT) += sensors-1.0/
 obj-$(CONFIG_MTK_COMBO) += connectivity/
 obj-$(CONFIG_MTK_BTIF) += btif/
+obj-$(CONFIG_MTK_CAM_TIMESYNC) += cam_timesync/
