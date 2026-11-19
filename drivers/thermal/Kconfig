@@ -429,4 +429,12 @@ config SPRD_THERMAL
 	help
 	  Support for the Spreadtrum thermal sensor driver in the Linux thermal
 	  framework.
+
+config SYSRST_COOLING
+	tristate "System reboot cooling device"
+	depends on OF
+	help
+	  Support for the system reboot cooling device in the Linux thermal
+	  framework.
+
 endif
