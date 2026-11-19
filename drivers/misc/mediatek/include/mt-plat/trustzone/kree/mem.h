@@ -92,6 +92,7 @@ enum kree_mem_type {
 struct mtee_cma_sec_mem {
 	struct cma *tz_cma;
 	struct page *secure_pages;
+	struct page *kept_pages;
 	size_t secure_size;
 };
 

@@ -308,8 +308,11 @@ int KREE_ServGetChunkmemPool(u32 op,
 		return TZ_RESULT_ERROR_OUT_OF_MEMORY;
 	}
 
+	cma_sec_mem->secure_pages = cma_sec_mem->kept_pages;
+	cma_sec_mem->kept_pages = NULL;
+
 	retry = 10;
-	while (retry-- > 0) {
+	while (!cma_sec_mem->secure_pages && retry-- > 0) {
 		cma_sec_mem->secure_pages = cma_alloc_large(cma_sec_mem->tz_cma,
 					    cma_sec_mem->secure_size / SZ_4K,
 					    get_order(SZ_1M));
@@ -354,9 +357,8 @@ int KREE_ServReleaseChunkmemPool(u32 op,
 	if (cma_sec_mem->secure_pages != NULL) {
 		phys_addr_t addr = page_to_phys(cma_sec_mem->secure_pages);
 
-		cma_release(cma_sec_mem->tz_cma, cma_sec_mem->secure_pages,
-			    cma_sec_mem->secure_size >> PAGE_SHIFT);
-		pr_info("%s() release @%pax [0x%zx]\n", __func__,
+		cma_sec_mem->kept_pages = cma_sec_mem->secure_pages;
+		pr_info("%s() keep @%pax [0x%zx]\n", __func__,
 			&addr, cma_sec_mem->secure_size);
 		cma_sec_mem->secure_pages = NULL;
 		return TZ_RESULT_SUCCESS;
