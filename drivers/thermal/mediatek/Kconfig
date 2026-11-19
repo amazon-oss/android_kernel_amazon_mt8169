@@ -19,3 +19,12 @@ config MTK_PMIC_THERMAL
 	  for Mediatek platforms.
 	  This driver reads the voltage value from PMIC AUXADC channels,
 	  and converts raw value to PMIC temperature via PMIC efuse data.
+
+config MTK_CHARGER_THERMAL
+        tristate "Mediatek charger cooling framework"
+        depends on MTK_CHARGER
+        help
+          Enable this option to turn on charger throttle mechanisms
+          for Mediatek platforms.
+          This option depends on MTK_CHARGER which is
+          MTK charger driver.
