@@ -430,6 +430,8 @@ config SPRD_THERMAL
 	  Support for the Spreadtrum thermal sensor driver in the Linux thermal
 	  framework.
 
+source "drivers/thermal/virtual_sensor_tablet/Kconfig"
+
 config SYSRST_COOLING
 	tristate "System reboot cooling device"
 	depends on OF
