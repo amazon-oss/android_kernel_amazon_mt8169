@@ -192,6 +192,16 @@ enum v4l2_colorfx {
  * We reserve 16 controls for this driver. */
 #define V4L2_CID_USER_IMX_BASE			(V4L2_CID_USER_BASE + 0x10b0)
 
+/* The base for the mediatek FD driver controls */
+/* We reserve 16 controls for this driver. */
+#define V4L2_CID_USER_MTK_FD_BASE		(V4L2_CID_USER_BASE + 0x10c0)
+
+/*
+ * The base for the mtk-mdp driver controls.
+ * We reserve 32 controls for this driver.
+ */
+#define V4L2_CID_USER_MTK_MDP_BASE		(V4L2_CID_USER_BASE + 0x1090)
+
 /* MPEG-class control IDs */
 /* The MPEG controls are applicable to all codec controls
  * and the 'MPEG' part of the define is historical */
@@ -369,6 +379,7 @@ enum v4l2_mpeg_video_aspect {
 enum v4l2_mpeg_video_bitrate_mode {
 	V4L2_MPEG_VIDEO_BITRATE_MODE_VBR = 0,
 	V4L2_MPEG_VIDEO_BITRATE_MODE_CBR = 1,
+	V4L2_MPEG_VIDEO_BITRATE_MODE_CQ = 2,
 };
 #define V4L2_CID_MPEG_VIDEO_BITRATE		(V4L2_CID_MPEG_BASE+207)
 #define V4L2_CID_MPEG_VIDEO_BITRATE_PEAK	(V4L2_CID_MPEG_BASE+208)
@@ -1051,6 +1062,14 @@ enum v4l2_jpeg_chroma_subsampling {
 #define V4L2_CID_TEST_PATTERN			(V4L2_CID_IMAGE_PROC_CLASS_BASE + 3)
 #define V4L2_CID_DEINTERLACING_MODE		(V4L2_CID_IMAGE_PROC_CLASS_BASE + 4)
 #define V4L2_CID_DIGITAL_GAIN			(V4L2_CID_IMAGE_PROC_CLASS_BASE + 5)
+#define V4L2_CID_ENGINE_RESOURCE_USAGE_LIMITATION \
+	(V4L2_CID_IMAGE_PROC_CLASS_BASE + 6)
+#define V4L2_CID_BIN_LIMITATION \
+	(V4L2_CID_IMAGE_PROC_CLASS_BASE + 7)
+#define V4L2_CID_FRZ_LIMITATION \
+	(V4L2_CID_IMAGE_PROC_CLASS_BASE + 8)
+#define V4L2_CID_RESOURCE_PLAN_POLICY \
+	(V4L2_CID_IMAGE_PROC_CLASS_BASE + 9)
 
 /*  DV-class control IDs defined by V4L2 */
 #define V4L2_CID_DV_CLASS_BASE			(V4L2_CTRL_CLASS_DV | 0x900)
