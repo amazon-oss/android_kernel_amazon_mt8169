@@ -75,6 +75,7 @@ endmenu # Debug
 
 menu "Modem & Connectivity"
 source "drivers/misc/mediatek/btif/Kconfig"
+source "drivers/misc/mediatek/connectivity/Kconfig"
 endmenu # Modem
 
 menu "Other Peripherals"
