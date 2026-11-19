@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0
+
+MTK_PLATFORM_WMT		:= mt8169
+TARGET_BOARD_PLATFORM_WMT	:= mt8169
+TARGET_BUILD_VARIANT		:= user
+
+include $(srctree)/$(src)/Makefile

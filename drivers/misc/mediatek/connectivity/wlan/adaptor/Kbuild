@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0
+
+ADAPTOR_OPTS			:= SOC2_1X1
+
+include $(srctree)/$(src)/Makefile

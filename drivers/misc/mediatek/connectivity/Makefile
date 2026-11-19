@@ -31,6 +31,11 @@ ifneq ($(KERNELRELEASE),)
     $(MODULE_NAME)-objs += common/connectivity_build_in_adapter.o
     $(MODULE_NAME)-objs += common/wmt_build_in_adapter.o
 
+    obj-$(CONFIG_MTK_COMBO) += wmt/
+    obj-$(CONFIG_MTK_COMBO) += bt/mt66xx/
+    obj-$(CONFIG_MTK_COMBO_WIFI) += wlan/adaptor/
+    obj-$(CONFIG_MTK_COMBO_WIFI) += wlan/gen4m/
+
     ifeq ($(CONFIG_MTK_COMBO), y)
         ccflags-y += -D CFG_CONNADP_BUILD_IN
     endif

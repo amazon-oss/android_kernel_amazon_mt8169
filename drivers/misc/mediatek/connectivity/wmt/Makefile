@@ -164,10 +164,10 @@ ifneq ($(filter "CONSYS_%",$(CONFIG_MTK_COMBO_CHIP)),)
     ccflags-y += -D MTK_WCN_SOC_CHIP_SUPPORT
 endif
 
-ccflags-y += -I$(src)/common_main/linux/include
-ccflags-y += -I$(src)/common_detect/drv_init/inc
-ccflags-y += -I$(src)/common_detect
-ccflags-y += -I$(src)/debug_utility
+ccflags-y += -I$(srctree)/$(src)/common_main/linux/include
+ccflags-y += -I$(srctree)/$(src)/common_detect/drv_init/inc
+ccflags-y += -I$(srctree)/$(src)/common_detect
+ccflags-y += -I$(srctree)/$(src)/debug_utility
 
 $(MODULE_NAME)-objs += common_detect/wmt_detect_pwr.o
 $(MODULE_NAME)-objs += common_detect/wmt_detect.o
@@ -201,11 +201,11 @@ $(MODULE_NAME)-objs += common_detect/drv_init/gps_drv_init.o
 ###############################################################################
 # common_main
 ###############################################################################
-ccflags-y += -I$(src)/common_main/linux/include
-ccflags-y += -I$(src)/common_main/linux/pri/include
-ccflags-y += -I$(src)/common_main/platform/include
-ccflags-y += -I$(src)/common_main/core/include
-ccflags-y += -I$(src)/common_main/include
+ccflags-y += -I$(srctree)/$(src)/common_main/linux/include
+ccflags-y += -I$(srctree)/$(src)/common_main/linux/pri/include
+ccflags-y += -I$(srctree)/$(src)/common_main/platform/include
+ccflags-y += -I$(srctree)/$(src)/common_main/core/include
+ccflags-y += -I$(srctree)/$(src)/common_main/include
 
 ccflags-y += -D WMT_PLAT_ALPS=1
 ccflags-y += -D WMT_UART_RX_MODE_WORK=0 # 1. work thread 0. tasklet
@@ -241,7 +241,7 @@ endif
 ifneq ($(filter "CONSYS_%",$(CONFIG_MTK_COMBO_CHIP)),)
 $(MODULE_NAME)-objs += common_main/platform/$(CONNSYS_PLATFORM).o
 $(MODULE_NAME)-objs += common_main/platform/$(CONNSYS_PLATFORM)_dbg.o
-ifneq ($(wildcard $(src)/common_main/platform/$(CONNSYS_PLATFORM)_pos_gen.c),)
+ifneq ($(wildcard $(srctree)/$(src)/common_main/platform/$(CONNSYS_PLATFORM)_pos_gen.c),)
 $(MODULE_NAME)-objs += common_main/platform/$(CONNSYS_PLATFORM)_pos_gen.o
 endif
 endif
@@ -299,7 +299,7 @@ $(MODULE_NAME)-objs += debug_utility/connsys_debug_utility.o
 # test
 ###############################################################################
 ifeq ($(TARGET_BUILD_VARIANT),eng)
-ccflags-y += -I$(src)/test/include
+ccflags-y += -I$(srctree)/$(src)/test/include
 endif
 
 endif

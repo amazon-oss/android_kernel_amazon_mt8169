@@ -261,15 +261,15 @@ ifeq ($(CONFIG_MTK_WIFI_CONNINFRA_SUPPORT), y)
         ccflags-y += -I$(TOP)/vendor/mediatek/kernel_modules_mt8169/connectivity/conninfra/debug_utility/connsyslog
         ccflags-y += -I$(TOP)/vendor/mediatek/kernel_modules_mt8169/connectivity/conninfra/debug_utility/coredump
         ccflags-y += -I$(TOP)/vendor/mediatek/kernel_modules_mt8169/connectivity/conninfra/debug_utility/coredump/platform/include
-        ccflags-y += -I$(TOP)/vendor/mediatek/kernel_modules_mt8169/connectivity/wlan/adaptor
+        ccflags-y += -I$(srctree)/drivers/misc/mediatek/connectivity/wlan/adaptor
     endif
 else
     ccflags-y += -DCFG_SUPPORT_CONNINFRA=0
     ccflags-y += -DCFG_ANDORID_CONNINFRA_COREDUMP_SUPPORT=0
     ccflags-y += -DCFG_SUPPORT_PRE_ON_PHY_ACTION=0
     ifeq ($(WMT_SUPPORT), y)
-        ccflags-y += -I$(TOP)/vendor/mediatek/kernel_modules_mt8169/connectivity/common/common_main/include
-        ccflags-y += -I$(TOP)/vendor/mediatek/kernel_modules_mt8169/connectivity/common/common_main/linux/include
+        ccflags-y += -I$(srctree)/drivers/misc/mediatek/connectivity/wmt/common_main/include
+        ccflags-y += -I$(srctree)/drivers/misc/mediatek/connectivity/wmt/common_main/linux/include
         ifeq ($(CONFIG_MTK_CONN_LTE_IDC_SUPPORT),y)
             ccflags-y += -DWMT_IDC_SUPPORT=1
         else
@@ -414,10 +414,10 @@ ifeq ($(MODULE_NAME),)
 endif
 
 ccflags-y += -DDBG=0
-ccflags-y += -I$(src)/os -I$(src)/os/$(os)/include
-ccflags-y += -I$(src)/include -I$(src)/include/nic -I$(src)/include/mgmt -I$(src)/include/chips
+ccflags-y += -I$(srctree)/$(src)/os -I$(srctree)/$(src)/os/$(os)/include
+ccflags-y += -I$(srctree)/$(src)/include -I$(srctree)/$(src)/include/nic -I$(srctree)/$(src)/include/mgmt -I$(srctree)/$(src)/include/chips
 ifeq ($(CFG_SUPPORT_WIFI_SYSDVT), 1)
-ccflags-y += -I$(src)/include/dvt
+ccflags-y += -I$(srctree)/$(src)/include/dvt
 endif
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/base/power/include/
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/
@@ -443,22 +443,22 @@ ccflags-y += -DCFG_MTK_MDDP_WH_SUPPORT=0
 endif
 
 ifeq ($(CONFIG_MTK_COMBO_WIFI_HIF), sdio)
-ccflags-y += -I$(src)/os/$(os)/hif/sdio/include
+ccflags-y += -I$(srctree)/$(src)/os/$(os)/hif/sdio/include
 else ifeq ($(CONFIG_MTK_COMBO_WIFI_HIF), pcie)
-ccflags-y += -I$(src)/os/$(os)/hif/common/include
-ccflags-y += -I$(src)/os/$(os)/hif/pcie/include
+ccflags-y += -I$(srctree)/$(src)/os/$(os)/hif/common/include
+ccflags-y += -I$(srctree)/$(src)/os/$(os)/hif/pcie/include
 ifneq ($(findstring 3_0,$(MTK_COMBO_CHIP)),)
-ccflags-y += -I$(src)/include/chips/coda/soc3_0
+ccflags-y += -I$(srctree)/$(src)/include/chips/coda/soc3_0
 endif
 else ifeq ($(CONFIG_MTK_COMBO_WIFI_HIF), axi)
-ccflags-y += -I$(src)/os/$(os)/hif/common/include
-ccflags-y += -I$(src)/os/$(os)/hif/axi/include
+ccflags-y += -I$(srctree)/$(src)/os/$(os)/hif/common/include
+ccflags-y += -I$(srctree)/$(src)/os/$(os)/hif/axi/include
 else ifeq ($(CONFIG_MTK_COMBO_WIFI_HIF), usb)
-ccflags-y += -I$(src)/os/$(os)/hif/usb/include
+ccflags-y += -I$(srctree)/$(src)/os/$(os)/hif/usb/include
 else ifeq ($(CONFIG_MTK_COMBO_WIFI_HIF), ut)
-ccflags-y += -I$(src)/test -I$(src)/test/lib/include -I$(src)/test/testcases -I$(src)/test/lib/hif
+ccflags-y += -I$(srctree)/$(src)/test -I$(srctree)/$(src)/test/lib/include -I$(srctree)/$(src)/test/testcases -I$(srctree)/$(src)/test/lib/hif
 else ifeq ($(CONFIG_MTK_COMBO_WIFI_HIF), none)
-ccflags-y += -I$(src)/os/$(os)/hif/none/include
+ccflags-y += -I$(srctree)/$(src)/os/$(os)/hif/none/include
 endif
 
 ifneq ($(PLATFORM_FLAGS), )
@@ -770,10 +770,10 @@ endif
 ifeq ($(MTK_WLAN_SERVICE), yes)
 ccflags-y += -DCONFIG_WLAN_SERVICE=1
 ccflags-y += -DCONFIG_TEST_ENGINE_OFFLOAD=1
-ccflags-y += -I$(src)/$(SERVICE_DIR)include
-ccflags-y += -I$(src)/$(SERVICE_DIR)service/include
-ccflags-y += -I$(src)/$(SERVICE_DIR)glue/osal/include
-ccflags-y += -I$(src)/$(SERVICE_DIR)glue/hal/include
+ccflags-y += -I$(srctree)/$(src)/$(SERVICE_DIR)include
+ccflags-y += -I$(srctree)/$(src)/$(SERVICE_DIR)service/include
+ccflags-y += -I$(srctree)/$(src)/$(SERVICE_DIR)glue/osal/include
+ccflags-y += -I$(srctree)/$(src)/$(SERVICE_DIR)glue/hal/include
 $(info $$CCFLAG is [{$(ccflags-y)}])
 SERVICE_OBJS := $(SERVICE_DIR)agent/agent.o \
                 $(SERVICE_DIR)service/service_test.o \

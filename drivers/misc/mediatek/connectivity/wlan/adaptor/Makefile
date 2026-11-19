@@ -14,8 +14,8 @@ KBUILD_MODPOST_FAIL_ON_WARNINGS := y
 
 ccflags-y += \
     -I$(srctree)/drivers/misc/mediatek/include/mt-plat \
-    -I$(TOP)/vendor/mediatek/kernel_modules_mt8169/connectivity/common/common_main/include \
-    -I$(TOP)/vendor/mediatek/kernel_modules_mt8169/connectivity/common/common_main/linux/include
+    -I$(srctree)/drivers/misc/mediatek/connectivity/wmt/common_main/include \
+    -I$(srctree)/drivers/misc/mediatek/connectivity/wmt/common_main/linux/include
 
 ifeq ($(ADAPTOR_OPTS),CONNAC2X2_SOC3_0)
 ccflags-y += -I$(TOP)/vendor/mediatek/kernel_modules_mt8169/connectivity/conninfra/include
@@ -27,7 +27,7 @@ endif
 
 ifneq ($(CONFIG_MTK_CONNSYS_DEDICATED_LOG_PATH),)
 ccflags-y += -DCONFIG_MTK_CONNSYS_DEDICATED_LOG_PATH
-ccflags-y += -I$(TOP)/vendor/mediatek/kernel_modules_mt8169/connectivity/common/debug_utility
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/connectivity/wmt/debug_utility
 endif
 
 ifeq ($(CONFIG_MTK_CONN_LTE_IDC_SUPPORT),y)
