@@ -455,6 +455,28 @@ void put_files_struct(struct files_struct *files)
 	}
 }
 
+int conn_export_file_opened_by_task(struct task_struct *task,
+	struct file *file)
+{
+	struct files_struct *files;
+	unsigned int fd;
+	int ret = -1;
+
+	files = get_files_struct(task);
+	if (!files)
+		return ret;
+
+	for (fd = 3; fd < files_fdtable(files)->max_fds; fd++) {
+		if (fcheck_files(files, fd) == file) {
+			ret = 0;
+			break;
+		}
+	}
+	put_files_struct(files);
+	return ret;
+}
+EXPORT_SYMBOL(conn_export_file_opened_by_task);
+
 void reset_files_struct(struct files_struct *files)
 {
 	struct task_struct *tsk = current;

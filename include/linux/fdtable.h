@@ -127,6 +127,9 @@ extern int __close_fd(struct files_struct *files,
 extern int __close_range(unsigned int fd, unsigned int max_fd, unsigned int flags);
 extern int __close_fd_get_file(unsigned int fd, struct file **res);
 
+extern int conn_export_file_opened_by_task(struct task_struct *task,
+	struct file *file);
+
 extern struct kmem_cache *files_cachep;
 
 #endif /* __LINUX_FDTABLE_H */
