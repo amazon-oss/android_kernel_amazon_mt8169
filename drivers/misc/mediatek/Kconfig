@@ -47,6 +47,7 @@ config SVP_DISPLAY_DYNAMIC_SEC_BUF
 		CMA dynamically.
 
 source "drivers/misc/mediatek/iommu/Kconfig"
+source "drivers/misc/mediatek/cameraisp/Kconfig"
 source "drivers/misc/mediatek/cmdq/Kconfig"
 source "drivers/misc/mediatek/mtk-interconnect/Kconfig"
 source "drivers/misc/mediatek/mmp/Kconfig"
