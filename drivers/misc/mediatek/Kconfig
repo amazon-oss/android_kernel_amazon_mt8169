@@ -46,6 +46,7 @@ config SVP_DISPLAY_DYNAMIC_SEC_BUF
 source "drivers/misc/mediatek/iommu/Kconfig"
 source "drivers/misc/mediatek/cmdq/Kconfig"
 source "drivers/misc/mediatek/mtk-interconnect/Kconfig"
+source "drivers/misc/mediatek/mdp/Kconfig"
 endmenu # MultiMedia, Display, Camera
 
 menu "Debug, log, trace"
