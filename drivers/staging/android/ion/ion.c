@@ -24,6 +24,9 @@
 #include <linux/sched/task.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
+#if (IS_ENABLED(CONFIG_MTK_ION_DEBUG) && IS_ENABLED(CONFIG_PROC_FS))
+#include <linux/proc_fs.h>
+#endif
 
 #include "ion_private.h"
 
@@ -259,6 +262,65 @@ static int debug_shrink_get(void *data, u64 *val)
 DEFINE_SIMPLE_ATTRIBUTE(debug_shrink_fops, debug_shrink_get,
 			debug_shrink_set, "%llu\n");
 
+#if IS_ENABLED(CONFIG_MTK_ION_DEBUG)
+
+static int ion_heap_debug_show(struct seq_file *s, void *unused)
+{
+	struct ion_heap *heap = s->private;
+	u64 buf_num;
+
+	spin_lock(&heap->stat_lock);
+
+	buf_num = heap->num_of_buffers;
+
+	seq_puts(s, "----------------------------------------------------\n");
+	seq_printf(s, "%16.s: buf_num %llu, total_buf_size %lluM\n",
+		   heap->name, buf_num, (heap->num_of_alloc_bytes / SZ_1M));
+	seq_printf(s, "%16.s: alloc_bytes_wm %lluM, free_list_size %lluM\n",
+		   heap->name, (heap->alloc_bytes_wm / SZ_1M),
+		   (heap->free_list_size / SZ_1M));
+	seq_puts(s, "----------------------------------------------------\n");
+
+	spin_unlock(&heap->stat_lock);
+
+	mutex_lock(&heap->alloc_lock);
+
+	if (!list_empty(&heap->alloc_list) && heap->ops->debug_show)
+		heap->ops->debug_show(heap, s, unused);
+
+	mutex_unlock(&heap->alloc_lock);
+
+	return 0;
+}
+
+static int ion_debug_heap_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, ion_heap_debug_show, inode->i_private);
+}
+
+static const struct file_operations debug_heap_fops = {
+	.open = ion_debug_heap_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+#if IS_ENABLED(CONFIG_PROC_FS)
+static int ion_proc_heap_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, ion_heap_debug_show, PDE_DATA(inode));
+}
+
+static const struct file_operations proc_heap_fops = {
+	.open = ion_proc_heap_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif
+
+#endif	/* CONFIG_MTK_ION_DEBUG */
+
 static int ion_assign_heap_id(struct ion_heap *heap, struct ion_device *dev)
 {
 	int id_bit = -EINVAL;
@@ -327,6 +389,10 @@ int __ion_device_add_heap(struct ion_heap *heap, struct module *owner)
 	spin_lock_init(&heap->stat_lock);
 	heap->free_list_size = 0;
 
+#if IS_ENABLED(CONFIG_MTK_ION_DEBUG)
+	mutex_init(&heap->alloc_lock);
+	INIT_LIST_HEAD(&heap->alloc_list);
+#endif
 	if (heap->flags & ION_HEAP_FLAG_DEFER_FREE) {
 		ret = ion_heap_init_deferred_free(heap);
 		if (ret)
@@ -367,7 +433,21 @@ int __ion_device_add_heap(struct ion_heap *heap, struct module *owner)
 				    heap,
 				    &debug_shrink_fops);
 	}
-
+#if IS_ENABLED(CONFIG_MTK_ION_DEBUG)
+	if (heap->ops->debug_show) {
+		debugfs_create_file("buffer_debug", 0444, heap_root, heap,
+				    &debug_heap_fops);
+#if IS_ENABLED(CONFIG_PROC_FS)
+		heap->proc_dir = proc_mkdir(heap->name, dev->proc_root);
+		if (heap->proc_dir)
+			proc_create_data("buffer_debug", S_IFREG | 0444,
+					 heap->proc_dir, &proc_heap_fops, heap);
+		else
+			pr_info("%s: fail to mkdir /proc/ion/%s\n", __func__,
+				heap->name);
+#endif
+	}
+#endif
 	heap->debugfs_dir = heap_root;
 	down_write(&dev->lock);
 	ret = ion_assign_heap_id(heap, dev);
@@ -387,9 +467,15 @@ int __ion_device_add_heap(struct ion_heap *heap, struct module *owner)
 
 	up_write(&dev->lock);
 
+	pr_info("[ION] %s name:%s, id:%u, cnt:%d\n",
+		__func__, heap->name, heap->id, dev->heap_cnt);
 	return 0;
 
 out_debugfs_cleanup:
+#if (IS_ENABLED(CONFIG_MTK_ION_DEBUG) && IS_ENABLED(CONFIG_PROC_FS))
+	if (heap->proc_dir)
+		proc_remove(heap->proc_dir);
+#endif
 	debugfs_remove_recursive(heap->debugfs_dir);
 out_heap_cleanup:
 	ion_heap_cleanup(heap);
@@ -416,6 +502,10 @@ void ion_device_remove_heap(struct ion_heap *heap)
 			__func__, heap->name);
 	}
 	debugfs_remove_recursive(heap->debugfs_dir);
+#if (IS_ENABLED(CONFIG_MTK_ION_DEBUG) && IS_ENABLED(CONFIG_PROC_FS))
+	if (heap->proc_dir)
+		proc_remove(heap->proc_dir);
+#endif
 	clear_bit(heap->id, dev->heap_ids);
 	dev->heap_cnt--;
 	up_write(&dev->lock);
@@ -505,6 +595,9 @@ static int ion_device_create(void)
 	}
 
 	idev->debug_root = debugfs_create_dir("ion", NULL);
+#if (IS_ENABLED(CONFIG_MTK_ION_DEBUG) && IS_ENABLED(CONFIG_PROC_FS))
+	idev->proc_root = proc_mkdir("ion", NULL);
+#endif
 	init_rwsem(&idev->lock);
 	plist_head_init(&idev->heaps);
 	internal_dev = idev;

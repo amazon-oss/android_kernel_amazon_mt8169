@@ -11,4 +11,12 @@ menuconfig ION
 	  If you're not using Android its probably safe to
 	  say N here.
 
+config MTK_ION_DEBUG
+	bool "Ion heap debug information"
+	depends on ION
+	help
+	  Choose this option to open Mediatek debug information,
+	  the information could support all ION heaps. It can
+	  show the buffer information about current ion heap.
+
 source "drivers/staging/android/ion/heaps/Kconfig"
