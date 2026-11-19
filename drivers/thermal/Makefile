@@ -3,6 +3,8 @@
 # Makefile for sensor chip drivers.
 #
 
+ccflags-y	+= -I$(srctree)/drivers/power/supply
+
 obj-$(CONFIG_THERMAL)		+= thermal_sys.o
 thermal_sys-y			+= thermal_core.o thermal_sysfs.o \
 					thermal_helpers.o
