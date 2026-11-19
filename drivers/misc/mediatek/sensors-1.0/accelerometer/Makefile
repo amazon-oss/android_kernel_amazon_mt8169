@@ -6,6 +6,7 @@ obj-$(CONFIG_MTK_SENSOR_SUPPORT)   +=  accel_common.o
 accel_common-$(CONFIG_MTK_SENSOR_SUPPORT) := accel.o accel_factory.o
 
 obj-$(CONFIG_MTK_ACCELHUB) += accelhub/
+obj-$(CONFIG_MTK_MC34XX)   +=  mc34xx/
 obj-$(CONFIG_MTK_SC7A20)    += sc7a20/
 #obj-$(CONFIG_MTK_BMI160_I2C)   += bmi160-i2c/
 #obj-$(CONFIG_MTK_LIS3DH_NEW) += lis3dh/
