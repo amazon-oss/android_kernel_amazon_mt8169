@@ -67,4 +67,6 @@ source "drivers/usb/typec/altmodes/Kconfig"
 
 source "drivers/usb/typec/amzn_ld/Kconfig"
 
+source "drivers/usb/typec/pubadc_manage/Kconfig"
+
 endif # TYPEC
