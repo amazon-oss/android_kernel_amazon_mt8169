@@ -65,6 +65,8 @@ source "drivers/usb/typec/mux/Kconfig"
 
 source "drivers/usb/typec/altmodes/Kconfig"
 
+source "drivers/usb/typec/fusb251/Kconfig"
+
 source "drivers/usb/typec/amzn_ld/Kconfig"
 
 source "drivers/usb/typec/pubadc_manage/Kconfig"
