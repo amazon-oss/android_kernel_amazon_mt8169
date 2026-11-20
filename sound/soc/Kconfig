@@ -83,6 +83,8 @@ source "sound/soc/codecs/Kconfig"
 
 # generic frame-work
 source "sound/soc/generic/Kconfig"
+# supported AW87XXX
+source "sound/soc/awinic/Kconfig"
 
 endif	# SND_SOC
 
