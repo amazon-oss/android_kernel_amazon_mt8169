@@ -75,7 +75,7 @@ static char metrics_buf[BATTERY_METRICS_BUFF_SIZE];
 	log_to_metrics(ANDROID_LOG_INFO, domain, metrics_buf);	\
 } while (0)
 #else
-static inline void p922x_metrics_log(void) {}
+#define p922x_metrics_log(domain, fmt, ...) do { } while (0)
 #endif
 
 struct p922x_dev *idt;
