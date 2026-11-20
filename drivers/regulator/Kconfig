@@ -447,6 +447,16 @@ config REGULATOR_LTC3676
 	  This enables support for the LTC3676
 	  8-output regulators controlled via I2C.
 
+config REGULATOR_MA5150
+	tristate "Mediatek MA5150 5 output voltage regulator"
+	depends on I2C
+	select REGMAP_I2C
+	help
+	  This adds support for Mediatek MA5150 PMIC.
+	  Tha MA5150 offers high integrated power management
+	  solution with four high-efficiency buck
+	  converters and a LDO voltage regulator.
+
 config REGULATOR_MAX14577
 	tristate "Maxim 14577/77836 regulator"
 	depends on MFD_MAX14577
