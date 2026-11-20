@@ -2,7 +2,9 @@
 subdir-ccflags-$(CONFIG_POWER_SUPPLY_DEBUG) := -DDEBUG
 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/power_throttling
+subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/boot
 subdir-ccflags-y += -I$(srctree)/drivers/usb/typec/pubadc_manage
+subdir-ccflags-y += -I$(srctree)/drivers/thermal
 
 power_supply-y				:= power_supply_core.o
 power_supply-$(CONFIG_SYSFS)		+= power_supply_sysfs.o
@@ -103,3 +105,4 @@ obj-$(CONFIG_MTK_CHARGER_TYPE_DETECT)	+= mtk_chg_type_det.o
 obj-$(CONFIG_MTK_CHARGER) += mtk_charger_framework.o mtk_pd_charging.o charger_class.o adapter_class.o mtk_charger_algorithm_class.o mtk_pd_adapter.o
 mtk_charger_framework-objs := mtk_charger.o mtk_charger_intf.o mtk_basic_charger.o mtk_pulse_charger.o
 mtk_pd_charging-objs := mtk_pd.o mtk_pd_hal.o
+obj-$(CONFIG_WPC_IDTP922X)  += idtp922x_wireless_power.o
